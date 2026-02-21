@@ -189,25 +189,31 @@ def rescore_all() -> dict:
                 tier_counts[tier] = tier_counts.get(tier, 0) + 1
                 updates.append({'id': str(row['candidate_id']), 'tier': tier, 'score': score})
 
-        # Bulk update tiers
-        # Add score column if not exists
-        session.execute(text("""
-            ALTER TABLE candidates ADD COLUMN IF NOT EXISTS score INTEGER DEFAULT 0
-        """))
+        # Bulk update tiers using psycopg2 execute_values for performance
+        session.execute(text(
+            "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS score INTEGER DEFAULT 0"
+        ))
         session.commit()
 
-        for upd in updates:
-            session.execute(text("""
-                UPDATE candidates SET score_tier = :tier::scoretierenum, score = :score
-                WHERE id = :id
-            """), upd)
+        # Build bulk update via temp table approach — avoids row-by-row and cast issues
+        from psycopg2.extras import execute_values
+        raw_conn = session.connection().connection
+        cur = raw_conn.cursor()
 
-        session.commit()
+        execute_values(cur, """
+            UPDATE candidates SET
+                score_tier = v.tier::scoretierenum,
+                score = v.score
+            FROM (VALUES %s) AS v(id, tier, score)
+            WHERE candidates.id = v.id::uuid
+        """, [(u['id'], u['tier'], u['score']) for u in updates])
+        raw_conn.commit()
+        cur.close()
 
-        # Remove excluded (F with score=0 from exclude rules)
-        session.execute(text("""
-            DELETE FROM candidates WHERE score = 0 AND score_tier = 'F'::scoretierenum
-        """))
+        # Remove excluded candidates (score=0, tier=F from exclude rules)
+        session.execute(text(
+            "DELETE FROM candidates WHERE score = 0 AND score_tier = 'F'::scoretierenum"
+        ))
         session.commit()
 
         logger.info(f"Re-score complete: {tier_counts}, excluded: {excluded}")
