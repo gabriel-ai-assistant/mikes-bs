@@ -9,4 +9,6 @@ RUN pip install --no-cache-dir -r requirements.txt && pip install -e .
 
 COPY . .
 
+ENV PYTHONPATH=/app
+
 CMD ["sh", "-c", "alembic upgrade head && python -m openclaw.main --run-now && python -m openclaw.main"]
