@@ -4,18 +4,18 @@ from openclaw.db.models import CountyEnum
 from openclaw.ingest.base import BaseIngestAgent
 
 ENDPOINT = (
-    "https://services1.arcgis.com/ZnUys0yQhBmQzAHh/arcgis/rest/services/"
-    "Assessor_Parcels/FeatureServer/0/query"
+    "https://gis.snoco.org/host/rest/services/Hosted/"
+    "CADASTRAL__parcels/FeatureServer/0/query"
 )
 
 FIELD_MAP = {
-    "PARCEL_ID": "parcel_id",
-    "SITUS_ADDRESS": "address",
-    "LOT_AREA": "lot_sf",
-    "USE_CODE": "present_use",
-    "ZONE": "zone_code",
-    "TOTAL_AV": "assessed_value",
-    "OWNER_NAME": "owner_name",
+    "parcel_id": "parcel_id",
+    "situsline1": "address",
+    "gis_sq_ft": "lot_sf",
+    "usecode": "present_use",
+    # No zone field in parcels layer — will need join with zoning layer later
+    "mklnd": "assessed_value",
+    "ownername": "owner_name",
 }
 
 

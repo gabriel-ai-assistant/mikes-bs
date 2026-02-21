@@ -4,18 +4,18 @@ from openclaw.db.models import CountyEnum
 from openclaw.ingest.base import BaseIngestAgent
 
 ENDPOINT = (
-    "https://gisdata.kingcounty.gov/arcgis/rest/services/"
-    "OpenDataPortal/property__kc_open_data/MapServer/205/query"
+    "https://gismaps.kingcounty.gov/arcgis/rest/services/"
+    "Property/KingCo_PropertyInfo/MapServer/2/query"
 )
 
 FIELD_MAP = {
     "PIN": "parcel_id",
-    "SITUSADDR": "address",
-    "SQ_FT_LOT": "lot_sf",
-    "PRESENT_USE": "present_use",
-    "ZONE_CODE": "zone_code",
-    "APPRAISED_VALUE": "assessed_value",
-    "OWNER_NAME": "owner_name",
+    "ADDR_FULL": "address",
+    "LOTSQFT": "lot_sf",
+    "PREUSE_DESC": "present_use",
+    "KCA_ZONING": "zone_code",
+    "APPRLNDVAL": "assessed_value",
+    # No owner_name in this layer — would need separate assessor lookup
 }
 
 
