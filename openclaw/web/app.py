@@ -197,33 +197,69 @@ def map_page(request: Request):
 
 @app.get("/api/map/points")
 def map_points(session: Session = Depends(db)):
-    rows = (
-        session.query(
-            Candidate.id,
-            Candidate.score_tier,
-            Candidate.estimated_profit,
-            Candidate.potential_splits,
-            Parcel.address,
-            func.ST_Y(func.ST_Centroid(Parcel.geometry)).label("lat"),
-            func.ST_X(func.ST_Centroid(Parcel.geometry)).label("lng"),
+    # Try candidates first
+    candidate_count = session.query(func.count(Candidate.id)).scalar() or 0
+    if candidate_count > 0:
+        rows = (
+            session.query(
+                Candidate.id,
+                Candidate.score_tier,
+                Candidate.estimated_profit,
+                Candidate.potential_splits,
+                Parcel.address,
+                func.ST_Y(func.ST_Centroid(Parcel.geometry)).label("lat"),
+                func.ST_X(func.ST_Centroid(Parcel.geometry)).label("lng"),
+            )
+            .join(Parcel)
+            .filter(Parcel.geometry.isnot(None))
+            .limit(2000)
+            .all()
         )
-        .join(Parcel)
-        .filter(Parcel.geometry.isnot(None))
-        .limit(2000)
-        .all()
-    )
+        features = []
+        for r in rows:
+            if r.lat is None or r.lng is None:
+                continue
+            features.append({
+                "id": str(r.id),
+                "tier": r.score_tier.value if r.score_tier else "C",
+                "address": r.address or "Unknown",
+                "profit": r.estimated_profit,
+                "splits": r.potential_splits,
+                "lat": float(r.lat),
+                "lng": float(r.lng),
+            })
+        return features
+
+    # Fallback: show parcels directly (sampled for performance)
+    rows = session.execute(text("""
+        SELECT
+            p.id::text,
+            p.address,
+            p.lot_sf,
+            p.county::text,
+            p.assessed_value,
+            ST_Y(ST_Centroid(p.geometry)) AS lat,
+            ST_X(ST_Centroid(p.geometry)) AS lng
+        FROM parcels p
+        WHERE p.geometry IS NOT NULL
+        ORDER BY p.lot_sf DESC NULLS LAST
+        LIMIT 5000
+    """)).mappings().all()
+
     features = []
     for r in rows:
-        if r.lat is None or r.lng is None:
+        if r["lat"] is None or r["lng"] is None:
             continue
         features.append({
-            "id": str(r.id),
-            "tier": r.score_tier.value if r.score_tier else "C",
-            "address": r.address or "Unknown",
-            "profit": r.estimated_profit,
-            "splits": r.potential_splits,
-            "lat": float(r.lat),
-            "lng": float(r.lng),
+            "id": r["id"],
+            "tier": "parcel",
+            "address": r["address"] or "No address",
+            "profit": r["assessed_value"],
+            "splits": None,
+            "lot_sf": r["lot_sf"],
+            "county": r["county"],
+            "lat": float(r["lat"]),
+            "lng": float(r["lng"]),
         })
     return features
 

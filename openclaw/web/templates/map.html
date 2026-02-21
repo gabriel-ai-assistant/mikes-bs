@@ -14,19 +14,25 @@
 const map=L.map('map').setView([47.6,-122.3],9);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
 
-const colors={A:'#16a34a',B:'#eab308',C:'#9ca3af'};
+const colors={A:'#16a34a',B:'#eab308',C:'#9ca3af',parcel:'#2563EB'};
 const m=v=>v!=null?'$'+v.toLocaleString():'—';
+const sf=v=>v!=null?v.toLocaleString()+' sf':'—';
 
 fetch(BASE+'/api/map/points').then(r=>r.json()).then(pts=>{
   if(!pts.length){
-    document.getElementById('map').innerHTML='<div class="empty-state" style="padding-top:30vh"><i class="bi bi-geo-alt" style="font-size:3rem"></i><h4>No map data yet</h4><p>Run the pipeline to see parcels on the map.</p></div>';
+    document.getElementById('map').innerHTML='<div class="empty-state" style="padding-top:30vh"><i class="bi bi-geo-alt" style="font-size:3rem"></i><h4>No map data yet</h4><p>No parcels loaded yet.</p></div>';
     return;
   }
   const bounds=[];
+  const isParcelView=pts[0]&&pts[0].tier==='parcel';
   pts.forEach(p=>{
     const c=colors[p.tier]||'#9ca3af';
-    const marker=L.circleMarker([p.lat,p.lng],{radius:7,fillColor:c,color:'#fff',weight:2,fillOpacity:.85}).addTo(map);
-    marker.bindPopup(`<strong>${p.address}</strong><br>Tier ${p.tier} · ${p.splits||0} splits<br>Profit: ${m(p.profit)}<br><a href="${BASE}/candidates?q=${encodeURIComponent(p.address)}">View Details →</a>`);
+    const marker=L.circleMarker([p.lat,p.lng],{radius:isParcelView?4:7,fillColor:c,color:'#fff',weight:1,fillOpacity:.7}).addTo(map);
+    if(isParcelView){
+      marker.bindPopup(`<strong>${p.address}</strong><br>${p.county?p.county.charAt(0).toUpperCase()+p.county.slice(1):''}<br>Lot: ${sf(p.lot_sf)}<br>Assessed: ${m(p.profit)}`);
+    } else {
+      marker.bindPopup(`<strong>${p.address}</strong><br>Tier ${p.tier} · ${p.splits||0} splits<br>Profit: ${m(p.profit)}<br><a href="${BASE}/candidates?q=${encodeURIComponent(p.address)}">View Details →</a>`);
+    }
     bounds.push([p.lat,p.lng]);
   });
   if(bounds.length)map.fitBounds(bounds,{padding:[30,30]});
