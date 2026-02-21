@@ -105,8 +105,6 @@
           </td>
           <td>
             <div class="d-flex gap-1">
-              <button class="btn btn-sm btn-outline-success"
-                      onclick="submitFeedback('{{ c.id }}', 'up')" title="Good candidate">👍</button>
               <button class="btn btn-sm btn-outline-primary"
                       onclick="showDetail('{{ c.id }}')" title="View Details">Details</button>
             </div>
@@ -125,11 +123,11 @@
 <div class="modal fade" id="detailModal" tabindex="-1">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
-      <div class="modal-header">
+      <div class="modal-header border-0 pb-0">
         <h5 class="modal-title" id="modalTitle">Candidate Detail</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
-      <div class="modal-body" id="modalBody">
+      <div class="modal-body pt-2" id="modalBody">
         <div class="text-center py-4"><div class="spinner-border text-primary"></div></div>
       </div>
     </div>
@@ -152,6 +150,14 @@ function fmt(v, prefix='$') {
   return v;
 }
 
+function tierBadgeClass(tier) {
+  const map = {A:'bg-success', B:'bg-primary', C:'bg-warning text-dark', D:'bg-orange text-white', E:'bg-danger', F:'bg-dark'};
+  return map[tier] || 'bg-secondary';
+}
+function tierBadgeStyle(tier) {
+  return tier === 'D' ? 'background:#fd7e14' : '';
+}
+
 async function submitFeedback(id, rating, category='', notes='') {
   const params = new URLSearchParams({rating});
   if (category) params.append('category', category);
@@ -160,91 +166,147 @@ async function submitFeedback(id, rating, category='', notes='') {
 }
 
 async function showDetail(id) {
-  // Destroy any previous mini-map instance
   if (_miniMap) { _miniMap.remove(); _miniMap = null; }
-
   document.getElementById('modalTitle').textContent = 'Loading…';
   document.getElementById('modalBody').innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
   modal.show();
-  const d = await fetch(`${BASE}/api/candidate/${id}`).then(r => r.json());
+
+  const [d, fb, notesData] = await Promise.all([
+    fetch(`${BASE}/api/candidate/${id}`).then(r => r.json()),
+    fetch(`${BASE}/api/candidate/${id}/feedback`).then(r => r.json()),
+    fetch(`${BASE}/api/candidate/${id}/notes?limit=3`).then(r => r.json()),
+  ]);
+
+  const tierStyle = d.tier === 'D' ? 'style="background:#fd7e14"' : '';
+  const tierCls = d.tier==='A'?'bg-success':d.tier==='B'?'bg-primary':d.tier==='C'?'bg-warning text-dark':d.tier==='D'?'':d.tier==='E'?'bg-danger':'bg-dark';
+
   document.getElementById('modalTitle').innerHTML =
-    `<span class="badge ${d.tier==='A'?'bg-success':d.tier==='B'?'bg-warning text-dark':'bg-secondary'} me-2">Tier ${d.tier}</span>${d.address || 'No address'}`;
+    `<span class="badge ${tierCls} me-2" ${tierStyle}>Tier ${d.tier || '?'}</span>${d.address || 'No address'}`;
+
+  const tagsHtml = (d.tags || []).map(t =>
+    `<span class="badge me-1 mb-1" style="background:#e8f4fd;color:#0d6efd;border:1px solid #bee5fd">${t}</span>`
+  ).join('');
+
+  const notesHtml = notesData.length
+    ? notesData.map(n => `
+        <div class="d-flex gap-2 align-items-start mb-1">
+          <span class="text-muted small">💬</span>
+          <div class="small">
+            <span class="text-dark">${escHtml(n.note)}</span>
+            <span class="text-muted ms-1" style="font-size:0.7rem">${n.created_at ? n.created_at.slice(0,10) : ''}</span>
+          </div>
+        </div>`).join('')
+    : '<div class="text-muted small">No notes yet.</div>';
+
+  const upActive   = fb.thumbs_up > 0 ? 'btn-success' : 'btn-outline-success';
+  const downActive = fb.thumbs_down > 0 ? 'btn-danger' : 'btn-outline-danger';
+
+  const detailUrl = `${BASE}/property/${d.parcel_id || ''}`;
 
   document.getElementById('modalBody').innerHTML = `
     <div class="row g-3">
+
+      <!-- Property Info -->
       <div class="col-md-6">
-        <h6 class="fw-bold text-muted text-uppercase small mb-1">📍 Property</h6>
+        <h6 class="fw-bold text-muted text-uppercase small mb-2">📍 Property</h6>
         <table class="table table-sm table-borderless mb-0">
-          <tr><td class="text-muted">Address</td><td class="fw-semibold">${d.address || '—'}</td></tr>
+          <tr><td class="text-muted" style="width:40%">Address</td><td class="fw-semibold">${d.address || '—'}</td></tr>
           <tr><td class="text-muted">County</td><td>${d.county || '—'}</td></tr>
-          <tr><td class="text-muted">Lot Size</td><td>${d.lot_sf ? d.lot_sf.toLocaleString() + ' sf (' + d.lot_acres + ' ac)' : '—'}</td></tr>
+          <tr><td class="text-muted">Lot Size</td><td>${d.lot_sf ? d.lot_sf.toLocaleString() + ' sf<br><span class="text-muted">(' + d.lot_acres + ' ac)</span>' : '—'}</td></tr>
           <tr><td class="text-muted">Zone</td><td><strong>${d.zone_code || '—'}</strong>${d.zone_label ? '<br><span class="text-muted small">'+d.zone_label+'</span>' : ''}</td></tr>
           <tr><td class="text-muted">Use Code</td><td>${d.present_use || '—'}</td></tr>
+          ${d.score != null ? `<tr><td class="text-muted">Score</td><td><span class="badge bg-secondary">${d.score} pts</span></td></tr>` : ''}
         </table>
       </div>
+
+      <!-- Owner + Value -->
       <div class="col-md-6">
-        <h6 class="fw-bold text-muted text-uppercase small mb-1">👤 Owner</h6>
+        <h6 class="fw-bold text-muted text-uppercase small mb-2">👤 Owner</h6>
         <table class="table table-sm table-borderless mb-0">
-          <tr><td class="text-muted">Name</td><td class="fw-semibold">${d.owner_name || '—'}</td></tr>
-          <tr><td class="text-muted">Mailing</td><td>${d.owner_address || '—'}</td></tr>
+          <tr><td class="text-muted" style="width:40%">Name</td><td class="fw-semibold">${d.owner_name || '—'}</td></tr>
+          <tr><td class="text-muted">Mailing</td><td class="small">${d.owner_address || '—'}</td></tr>
         </table>
-        <h6 class="fw-bold text-muted text-uppercase small mb-1 mt-3">💰 Value</h6>
+        <h6 class="fw-bold text-muted text-uppercase small mb-2 mt-3">💰 Value</h6>
         <table class="table table-sm table-borderless mb-0">
-          <tr><td class="text-muted">Land Value</td><td>${fmt(d.assessed_value)}</td></tr>
+          <tr><td class="text-muted" style="width:40%">Land Value</td><td>${fmt(d.assessed_value)}</td></tr>
           <tr><td class="text-muted">Improvements</td><td>${fmt(d.improvement_value)}</td></tr>
           <tr><td class="text-muted">Total Assessed</td><td class="fw-semibold">${fmt(d.total_value)}</td></tr>
         </table>
       </div>
+
+      <!-- Splits + Flags -->
       <div class="col-12">
-        <h6 class="fw-bold text-muted text-uppercase small mb-1">🏗️ Subdivision Potential</h6>
-        <div class="row g-2">
-          <div class="col-4 text-center p-2 bg-light rounded">
-            <div class="fs-3 fw-bold text-success">${d.splits}</div>
-            <div class="small text-muted">Potential Splits</div>
+        <h6 class="fw-bold text-muted text-uppercase small mb-2">🏗️ Subdivision Potential</h6>
+        <div class="row g-2 align-items-center">
+          <div class="col-auto">
+            <div class="text-center p-3 rounded" style="background:#f0fdf4;min-width:80px">
+              <div class="fs-2 fw-bold text-success">${d.splits ?? '—'}</div>
+              <div class="small text-muted">Potential Splits</div>
+            </div>
           </div>
-          <div class="col-8">
-            ${d.wetland_flag ? '<span class="badge bg-danger me-1">🌿 Wetland Overlap</span>' : ''}
-            ${d.ag_flag ? '<span class="badge bg-warning text-dark me-1">🚜 Ag Zone</span>' : ''}
-            ${d.shoreline_flag ? '<span class="badge bg-info me-1">🌊 Shoreline</span>' : ''}
+          <div class="col">
+            ${d.wetland_flag ? '<span class="badge bg-danger me-1 mb-1">🌿 Wetland Overlap</span>' : ''}
+            ${d.ag_flag ? '<span class="badge bg-warning text-dark me-1 mb-1">🚜 Ag Zone</span>' : ''}
+            ${d.shoreline_flag ? '<span class="badge bg-info me-1 mb-1">🌊 Shoreline</span>' : ''}
             ${!d.wetland_flag && !d.ag_flag && !d.shoreline_flag ? '<span class="text-success small">✅ No critical area flags</span>' : ''}
+            ${tagsHtml ? '<div class="mt-2">'+tagsHtml+'</div>' : ''}
           </div>
         </div>
       </div>
-      <div class="col-12 mt-2">
-        <h6 class="fw-bold text-muted text-uppercase small mb-1">🛰️ Satellite View</h6>
+
+      <!-- Satellite -->
+      <div class="col-12">
+        <h6 class="fw-bold text-muted text-uppercase small mb-2">🛰️ Satellite View</h6>
         ${d.lat ? `
         <div id="minimap-${d.id}" style="height:200px;border-radius:8px;overflow:hidden;margin-bottom:8px"></div>
-        <div class="d-flex gap-2 mb-2">
+        <div class="d-flex gap-2 flex-wrap">
           <a href="https://www.google.com/maps/@${d.lat},${d.lng},18z/data=!3m1!1e3" target="_blank" class="btn btn-sm btn-outline-secondary">📍 Google Maps</a>
           <a href="https://earth.google.com/web/@${d.lat},${d.lng},500a,500d,35y,0h,0t,0r" target="_blank" class="btn btn-sm btn-outline-secondary">🌍 Google Earth</a>
         </div>` : '<span class="text-muted small">No coordinates available</span>'}
       </div>
-      <div class="col-12 mt-1 border-top pt-3">
-        <div class="fw-semibold small mb-2">Was this a good candidate?</div>
-        <div class="d-flex gap-2 align-items-start">
-          <button class="btn btn-success btn-sm" onclick="submitFeedback('${d.id}','up'); this.textContent='👍 Saved!'; this.disabled=true">👍 Yes</button>
-          <div>
-            <button class="btn btn-danger btn-sm" onclick="document.getElementById('fbForm-${d.id}').classList.toggle('d-none')">👎 No</button>
-            <div id="fbForm-${d.id}" class="d-none mt-2">
-              <select id="fbCat-${d.id}" class="form-select form-select-sm mb-1">
-                <option value="">Select reason…</option>
-                <option value="wrong_use">Wrong use type (substation, commercial, etc.)</option>
-                <option value="utility">Utility / govt owned</option>
-                <option value="hoa">HOA / association land</option>
-                <option value="not_buildable">Not buildable (wetland, access issue)</option>
-                <option value="other">Other</option>
-              </select>
-              <textarea id="fbNotes-${d.id}" class="form-control form-control-sm mb-1" rows="2" placeholder="Notes (optional)…"></textarea>
-              <button class="btn btn-danger btn-sm" onclick="
-                const cat = document.getElementById('fbCat-${d.id}').value;
-                const notes = document.getElementById('fbNotes-${d.id}').value;
-                submitFeedback('${d.id}','down',cat,notes);
-                document.getElementById('fbForm-${d.id}').innerHTML='<span class=\\'text-danger small\\'>👎 Feedback saved</span>';
-              ">Submit</button>
-            </div>
-          </div>
+
+      <!-- Rating + Feedback -->
+      <div class="col-12 border-top pt-3">
+        <h6 class="fw-bold text-muted text-uppercase small mb-2">⭐ Rating</h6>
+        <div class="d-flex gap-2 align-items-center mb-2">
+          <button id="upBtn-${d.id}" class="btn btn-sm ${upActive}" onclick="doRating('${d.id}','up')">
+            👍 <span id="upCount-${d.id}">${fb.thumbs_up}</span>
+          </button>
+          <button id="downBtn-${d.id}" class="btn btn-sm ${downActive}" onclick="doRating('${d.id}','down')">
+            👎 <span id="downCount-${d.id}">${fb.thumbs_down}</span>
+          </button>
+        </div>
+        <!-- Negative feedback reason (hidden until 👎 clicked) -->
+        <div id="fbForm-${d.id}" class="d-none mb-2">
+          <select id="fbCat-${d.id}" class="form-select form-select-sm mb-1" style="max-width:320px">
+            <option value="">Select reason…</option>
+            <option value="wrong_use">Wrong use type (substation, commercial, etc.)</option>
+            <option value="utility">Utility / govt owned</option>
+            <option value="hoa">HOA / association land</option>
+            <option value="not_buildable">Not buildable (wetland, access issue)</option>
+            <option value="other">Other</option>
+          </select>
+          <textarea id="fbNotes-${d.id}" class="form-control form-control-sm mb-1" rows="2" placeholder="Notes (optional)…" style="max-width:320px"></textarea>
+          <button class="btn btn-danger btn-sm" onclick="submitNegFeedback('${d.id}')">Submit</button>
         </div>
       </div>
+
+      <!-- Comments -->
+      <div class="col-12 border-top pt-3">
+        <h6 class="fw-bold text-muted text-uppercase small mb-2">💬 Notes</h6>
+        <div id="notesList-${d.id}" class="mb-2">${notesHtml}</div>
+        <div class="d-flex gap-2">
+          <input id="noteInput-${d.id}" type="text" class="form-control form-control-sm" placeholder="Add a note…" style="max-width:300px"
+                 onkeydown="if(event.key==='Enter'){addNote('${d.id}')}">
+          <button class="btn btn-sm btn-outline-primary" onclick="addNote('${d.id}')">Add note</button>
+        </div>
+      </div>
+
+      <!-- View Details -->
+      <div class="col-12 border-top pt-3 d-flex justify-content-end">
+        <a href="${detailUrl}" class="btn btn-primary btn-sm">View Full Details →</a>
+      </div>
+
     </div>
   `;
 
@@ -256,6 +318,61 @@ async function showDetail(id) {
       L.marker([d.lat, d.lng]).addTo(_miniMap);
     }, 300);
   }
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function doRating(id, rating) {
+  const params = new URLSearchParams({rating});
+  await fetch(`${BASE}/api/candidate/${id}/feedback?${params}`, {method:'POST'});
+  // Reload counts
+  const fb = await fetch(`${BASE}/api/candidate/${id}/feedback`).then(r=>r.json());
+  document.getElementById(`upCount-${id}`).textContent = fb.thumbs_up;
+  document.getElementById(`downCount-${id}`).textContent = fb.thumbs_down;
+  if (rating === 'up') {
+    document.getElementById(`upBtn-${id}`).className = 'btn btn-sm btn-success';
+    document.getElementById(`fbForm-${id}`).classList.add('d-none');
+  } else {
+    document.getElementById(`downBtn-${id}`).className = 'btn btn-sm btn-danger';
+    document.getElementById(`fbForm-${id}`).classList.remove('d-none');
+  }
+}
+
+async function submitNegFeedback(id) {
+  const cat = document.getElementById(`fbCat-${id}`).value;
+  const notes = document.getElementById(`fbNotes-${id}`).value;
+  const params = new URLSearchParams({rating:'down'});
+  if (cat) params.append('category', cat);
+  if (notes) params.append('notes', notes);
+  await fetch(`${BASE}/api/candidate/${id}/feedback?${params}`, {method:'POST'});
+  document.getElementById(`fbForm-${id}`).innerHTML = '<span class="text-success small">✅ Feedback saved</span>';
+}
+
+async function addNote(id) {
+  const inp = document.getElementById(`noteInput-${id}`);
+  const note = inp.value.trim();
+  if (!note) return;
+  await fetch(`${BASE}/api/candidate/${id}/notes`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({note}),
+  });
+  inp.value = '';
+  // Reload notes
+  const notesData = await fetch(`${BASE}/api/candidate/${id}/notes?limit=3`).then(r=>r.json());
+  const html = notesData.length
+    ? notesData.map(n => `
+        <div class="d-flex gap-2 align-items-start mb-1">
+          <span class="text-muted small">💬</span>
+          <div class="small">
+            <span class="text-dark">${escHtml(n.note)}</span>
+            <span class="text-muted ms-1" style="font-size:0.7rem">${n.created_at ? n.created_at.slice(0,10) : ''}</span>
+          </div>
+        </div>`).join('')
+    : '<div class="text-muted small">No notes yet.</div>';
+  document.getElementById(`notesList-${id}`).innerHTML = html;
 }
 </script>
 {% endblock %}

@@ -45,6 +45,84 @@
 {% block scripts %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9/dist/leaflet.js"></script>
+
+<style>
+/* Style the Leaflet popup to match the candidates detail modal */
+.leaflet-popup-content-wrapper {
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0,0,0,.18);
+  padding: 0;
+  overflow: hidden;
+}
+.leaflet-popup-content {
+  margin: 0;
+  width: 320px !important;
+}
+.lp-card { font-family: inherit; font-size: 0.88rem; }
+.lp-header {
+  background: #212529;
+  color: #fff;
+  padding: 10px 14px 8px;
+}
+.lp-header .lp-tier-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 0.8rem;
+  margin-right: 6px;
+}
+.lp-header .lp-address { font-weight: 700; font-size: 0.97rem; }
+.lp-header .lp-owner { color: #adb5bd; font-size: 0.82rem; margin-top: 2px; }
+.lp-body { padding: 10px 14px; }
+.lp-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; margin-bottom: 8px; }
+.lp-metric-label { color: #6c757d; font-size: 0.78rem; }
+.lp-metric-value { font-weight: 600; font-size: 0.88rem; }
+.lp-splits-box {
+  display: inline-block;
+  background: #f0fdf4;
+  border-radius: 8px;
+  padding: 4px 12px;
+  text-align: center;
+  margin-bottom: 8px;
+}
+.lp-splits-num { font-size: 1.5rem; font-weight: 800; color: #198754; line-height:1; }
+.lp-splits-lbl { font-size: 0.7rem; color: #6c757d; }
+.lp-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.lp-tag { background: #fee2e2; color: #9b1c1c; padding: 2px 7px; border-radius: 5px; font-size: 0.73rem; }
+.lp-tag-ok { background: #dcfce7; color: #166534; padding: 2px 7px; border-radius: 5px; font-size: 0.73rem; }
+.lp-section-label { font-size: 0.73rem; font-weight: 700; text-transform: uppercase; color: #6c757d; letter-spacing: .5px; margin: 8px 0 4px; }
+.lp-rating-row { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+.lp-rating-btn {
+  border: 1px solid #dee2e6; background: #fff; border-radius: 6px;
+  padding: 3px 10px; cursor: pointer; font-size: 0.82rem;
+  transition: background .15s, border-color .15s;
+}
+.lp-rating-btn.up-active   { background: #198754; color: #fff; border-color: #198754; }
+.lp-rating-btn.down-active { background: #dc3545; color: #fff; border-color: #dc3545; }
+.lp-note-list { margin-bottom: 6px; }
+.lp-note-item { display: flex; gap: 6px; margin-bottom: 4px; font-size: 0.8rem; }
+.lp-note-text { color: #212529; }
+.lp-note-date { color: #adb5bd; font-size: 0.7rem; }
+.lp-note-input-row { display: flex; gap: 4px; }
+.lp-note-input {
+  flex: 1; border: 1px solid #dee2e6; border-radius: 6px;
+  padding: 3px 8px; font-size: 0.8rem; outline: none;
+}
+.lp-note-input:focus { border-color: #0d6efd; }
+.lp-add-btn {
+  background: #0d6efd; color: #fff; border: none; border-radius: 6px;
+  padding: 3px 10px; font-size: 0.8rem; cursor: pointer; white-space: nowrap;
+}
+.lp-detail-link {
+  display: block; text-align: center; margin-top: 10px;
+  background: #0d6efd; color: #fff; border-radius: 7px;
+  padding: 6px 12px; text-decoration: none; font-weight: 600; font-size: 0.85rem;
+}
+.lp-detail-link:hover { background: #0b5ed7; color: #fff; }
+.lp-footer { padding: 0 14px 12px; }
+</style>
+
 <script>
 const BASE = "{{ base_url }}";
 
@@ -76,6 +154,8 @@ function toggleSatellite() {
 
 let markers = [];
 let currentTier = '';
+// Cache candidate detail data to avoid repeated fetches
+const detailCache = {};
 
 function tierColor(tier, wetland) {
   if (wetland) return '#dc3545';
@@ -89,12 +169,129 @@ function tierColor(tier, wetland) {
   return '#6c757d';
 }
 
-function fmt(v) {
-  return v ? '$' + Number(v).toLocaleString() : '—';
+function tierBadgeBg(tier) {
+  const m = {A:'#198754',B:'#0d6efd',C:'#ffc107',D:'#fd7e14',E:'#dc3545',F:'#212529'};
+  return m[tier] || '#6c757d';
 }
-function fmtSf(v) {
-  if (!v) return '—';
-  return v.toLocaleString() + ' sf (' + (v/43560).toFixed(2) + ' ac)';
+
+function fmt(v) { return v != null ? '$' + Number(v).toLocaleString() : '—'; }
+function fmtSf(v) { if (!v) return '—'; return v.toLocaleString() + ' sf (' + (v/43560).toFixed(2) + ' ac)'; }
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Build popup HTML from point data (fast — no API call)
+function buildPopupHtml(pt) {
+  const flags = [];
+  if (pt.wetland) flags.push('<span class="lp-tag">🌿 Wetland</span>');
+  if (pt.ag)      flags.push('<span class="lp-tag">🚜 Ag Zone</span>');
+  const tagsHtml = flags.length
+    ? flags.join('') 
+    : '<span class="lp-tag-ok">✅ No critical flags</span>';
+
+  const detailUrl = pt.parcel_id ? `${BASE}/property/${pt.parcel_id}` : '#';
+  const scoreHtml = pt.score != null ? `<div><div class="lp-metric-label">Score</div><div class="lp-metric-value">${pt.score} pts</div></div>` : '';
+
+  return `
+<div class="lp-card">
+  <div class="lp-header">
+    <div>
+      <span class="lp-tier-badge" style="background:${tierBadgeBg(pt.tier)};${pt.tier==='C'?'color:#212529':'color:#fff'}">${pt.tier || '?'}</span>
+      <span class="lp-address">${escHtml(pt.address)}</span>
+    </div>
+    <div class="lp-owner">${escHtml(pt.owner)}</div>
+  </div>
+  <div class="lp-body">
+    <div class="d-flex align-items-center gap-3 mb-2">
+      <div class="lp-splits-box">
+        <div class="lp-splits-num">${pt.splits ?? '—'}</div>
+        <div class="lp-splits-lbl">Potential Splits</div>
+      </div>
+      <div class="lp-tags">${tagsHtml}</div>
+    </div>
+    <div class="lp-metrics">
+      <div><div class="lp-metric-label">Lot Size</div><div class="lp-metric-value">${fmtSf(pt.lot_sf)}</div></div>
+      <div><div class="lp-metric-label">Zone</div><div class="lp-metric-value">${pt.zone || '—'}</div></div>
+      <div><div class="lp-metric-label">Land Value</div><div class="lp-metric-value">${fmt(pt.value)}</div></div>
+      ${scoreHtml}
+    </div>
+
+    <div class="lp-section-label">⭐ Rating</div>
+    <div class="lp-rating-row" id="rating-row-${pt.id}">
+      <button class="lp-rating-btn" id="up-${pt.id}" onclick="mapRate('${pt.id}','up')">👍 <span id="up-count-${pt.id}">…</span></button>
+      <button class="lp-rating-btn" id="down-${pt.id}" onclick="mapRate('${pt.id}','down')">👎 <span id="down-count-${pt.id}">…</span></button>
+    </div>
+
+    <div class="lp-section-label">💬 Notes</div>
+    <div class="lp-note-list" id="notes-${pt.id}"><span style="color:#adb5bd;font-size:.78rem">Loading…</span></div>
+    <div class="lp-note-input-row">
+      <input class="lp-note-input" id="note-input-${pt.id}" type="text" placeholder="Add a note…"
+             onkeydown="if(event.key==='Enter'){mapAddNote('${pt.id}')}">
+      <button class="lp-add-btn" onclick="mapAddNote('${pt.id}')">Add</button>
+    </div>
+  </div>
+  <div class="lp-footer">
+    <a class="lp-detail-link" href="${detailUrl}">View Full Details →</a>
+  </div>
+</div>`;
+}
+
+// Load rating + notes for a popup after it opens
+async function loadPopupData(candidateId) {
+  const [fb, notes] = await Promise.all([
+    fetch(`${BASE}/api/candidate/${candidateId}/feedback`).then(r=>r.json()),
+    fetch(`${BASE}/api/candidate/${candidateId}/notes?limit=3`).then(r=>r.json()),
+  ]);
+  // Update rating buttons
+  const upBtn = document.getElementById(`up-${candidateId}`);
+  const downBtn = document.getElementById(`down-${candidateId}`);
+  if (upBtn) {
+    document.getElementById(`up-count-${candidateId}`).textContent = fb.thumbs_up;
+    document.getElementById(`down-count-${candidateId}`).textContent = fb.thumbs_down;
+    if (fb.thumbs_up > 0) upBtn.classList.add('up-active');
+    if (fb.thumbs_down > 0) downBtn.classList.add('down-active');
+  }
+  // Update notes
+  const notesEl = document.getElementById(`notes-${candidateId}`);
+  if (notesEl) {
+    notesEl.innerHTML = notes.length
+      ? notes.map(n=>`<div class="lp-note-item"><span>💬</span><div><span class="lp-note-text">${escHtml(n.note)}</span> <span class="lp-note-date">${n.created_at ? n.created_at.slice(0,10) : ''}</span></div></div>`).join('')
+      : '<span style="color:#adb5bd;font-size:.78rem">No notes yet.</span>';
+  }
+}
+
+async function mapRate(candidateId, rating) {
+  await fetch(`${BASE}/api/candidate/${candidateId}/feedback?rating=${rating}`, {method:'POST'});
+  const fb = await fetch(`${BASE}/api/candidate/${candidateId}/feedback`).then(r=>r.json());
+  const upBtn = document.getElementById(`up-${candidateId}`);
+  const downBtn = document.getElementById(`down-${candidateId}`);
+  if (upBtn) {
+    document.getElementById(`up-count-${candidateId}`).textContent = fb.thumbs_up;
+    document.getElementById(`down-count-${candidateId}`).textContent = fb.thumbs_down;
+    upBtn.classList.toggle('up-active', fb.thumbs_up > 0);
+    downBtn.classList.toggle('down-active', fb.thumbs_down > 0);
+  }
+}
+
+async function mapAddNote(candidateId) {
+  const inp = document.getElementById(`note-input-${candidateId}`);
+  if (!inp) return;
+  const note = inp.value.trim();
+  if (!note) return;
+  await fetch(`${BASE}/api/candidate/${candidateId}/notes`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({note}),
+  });
+  inp.value = '';
+  // Reload notes
+  const notes = await fetch(`${BASE}/api/candidate/${candidateId}/notes?limit=3`).then(r=>r.json());
+  const notesEl = document.getElementById(`notes-${candidateId}`);
+  if (notesEl) {
+    notesEl.innerHTML = notes.length
+      ? notes.map(n=>`<div class="lp-note-item"><span>💬</span><div><span class="lp-note-text">${escHtml(n.note)}</span> <span class="lp-note-date">${n.created_at ? n.created_at.slice(0,10) : ''}</span></div></div>`).join('')
+      : '<span style="color:#adb5bd;font-size:.78rem">No notes yet.</span>';
+  }
 }
 
 async function loadPoints(tier = '') {
@@ -120,28 +317,16 @@ async function loadPoints(tier = '') {
       fillOpacity: 0.85,
     });
 
-    const flags = [
-      pt.wetland ? '🌿 Wetland overlap' : null,
-      pt.ag ? '🚜 Agricultural zone' : null,
-    ].filter(Boolean);
+    const popup = L.popup({ maxWidth: 340, minWidth: 320, className: '' })
+      .setContent(buildPopupHtml(pt));
 
-    marker.bindPopup(`
-      <div style="min-width:200px">
-        <div style="font-weight:700;font-size:1rem;margin-bottom:4px">${pt.address}</div>
-        <div style="color:#555;margin-bottom:6px">${pt.owner || 'Unknown owner'}</div>
-        <table style="width:100%;font-size:0.85rem;border-collapse:collapse">
-          <tr><td style="color:#888">Tier</td><td><strong>Tier ${pt.tier}</strong></td></tr>
-          <tr><td style="color:#888">Splits</td><td><strong style="color:#198754;font-size:1.1rem">${pt.splits ?? '—'}</strong></td></tr>
-          <tr><td style="color:#888">Lot Size</td><td>${fmtSf(pt.lot_sf)}</td></tr>
-          <tr><td style="color:#888">Zone</td><td>${pt.zone || '—'}</td></tr>
-          <tr><td style="color:#888">Land Value</td><td>${fmt(pt.value)}</td></tr>
-        </table>
-        ${flags.length ? '<div style="margin-top:6px">' + flags.map(f=>`<span style="background:#fee2e2;color:#9b1c1c;padding:2px 6px;border-radius:4px;font-size:0.75rem;margin-right:4px">${f}</span>`).join('') + '</div>' : ''}
-        <div style="margin-top:8px">
-          <a href="${BASE}/candidates" style="font-size:0.8rem;color:#0d6efd">View all candidates →</a>
-        </div>
-      </div>
-    `, { maxWidth: 280 });
+    marker.bindPopup(popup);
+
+    // Load async data when popup opens
+    marker.on('popupopen', () => {
+      // Small delay to ensure DOM is rendered
+      setTimeout(() => loadPopupData(pt.id), 50);
+    });
 
     marker.addTo(map);
     markers.push(marker);

@@ -1,0 +1,363 @@
+{% extends "base.html" %}
+{% block title %}{{ p.address or p.parcel_id }} — Mike's BS{% endblock %}
+{% block content %}
+
+<!-- Back + Header -->
+<div class="d-flex align-items-center gap-2 mb-3">
+  <button onclick="history.back()" class="btn btn-sm btn-outline-secondary">← Back</button>
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0">
+      <li class="breadcrumb-item"><a href="{{ base_url }}/candidates">Candidates</a></li>
+      <li class="breadcrumb-item active">Property Detail</li>
+    </ol>
+  </nav>
+</div>
+
+{% if c %}
+{% set tier_val = c.score_tier.value if c.score_tier else '?' %}
+{% set tier_cls = 'bg-success' if tier_val=='A' else ('bg-primary' if tier_val=='B' else ('bg-warning text-dark' if tier_val=='C' else ('bg-danger' if tier_val=='E' else ('bg-dark' if tier_val=='F' else 'bg-secondary')))) %}
+{% set tier_style = 'background:#fd7e14' if tier_val=='D' else '' %}
+{% endif %}
+
+<!-- Property Header Card -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body">
+    <div class="row align-items-start">
+      <div class="col-md-8">
+        <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+          {% if c %}
+          <span class="badge {{ tier_cls }} fs-5" style="{{ tier_style }}">Tier {{ tier_val }}</span>
+          {% if c.score is not none %}
+          <span class="badge bg-secondary">{{ c.score }} pts</span>
+          {% endif %}
+          {% endif %}
+          <h4 class="mb-0 fw-bold">{{ p.address or "No address" }}</h4>
+        </div>
+        <div class="text-muted">
+          {{ p.owner_name or "Unknown owner" }} &nbsp;·&nbsp;
+          {{ p.county.value.title() if p.county else "Unknown county" }} County
+          {% if p.parcel_id %}&nbsp;·&nbsp; <span class="font-monospace small">{{ p.parcel_id }}</span>{% endif %}
+        </div>
+      </div>
+      <div class="col-md-4 text-md-end mt-2 mt-md-0">
+        <div class="d-flex gap-2 justify-content-md-end flex-wrap">
+          {% if lat %}
+          <a href="https://www.google.com/maps/@{{ lat }},{{ lng }},18z/data=!3m1!1e3" target="_blank" class="btn btn-sm btn-outline-secondary">📍 Google Maps</a>
+          <a href="https://earth.google.com/web/@{{ lat }},{{ lng }},500a,500d,35y,0h,0t,0r" target="_blank" class="btn btn-sm btn-outline-secondary">🌍 Google Earth</a>
+          {% elif p.address %}
+          <a href="https://maps.google.com/?q={{ p.address | urlencode }}" target="_blank" class="btn btn-sm btn-outline-secondary">📍 Google Maps</a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- EDGE Tags -->
+{% if c and c.tags %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <span class="fw-semibold text-muted small me-2">EDGE Tags:</span>
+    {% for tag in c.tags %}
+    <span class="badge me-1 mb-1" style="background:#e8f4fd;color:#0d6efd;border:1px solid #bee5fd">{{ tag }}</span>
+    {% endfor %}
+    {% if c.reason_codes %}
+    {% for rc in c.reason_codes %}
+    <span class="badge bg-light text-dark border me-1 mb-1">{{ rc }}</span>
+    {% endfor %}
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<div class="row g-3">
+
+  <!-- Left Column: Property + Owner + Value -->
+  <div class="col-md-6">
+
+    <!-- Property Metrics -->
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-transparent fw-bold small text-uppercase text-muted border-0 pb-0">📍 Property Details</div>
+      <div class="card-body">
+        <table class="table table-sm table-borderless mb-0">
+          <tbody>
+            <tr>
+              <td class="text-muted" style="width:45%">Address</td>
+              <td class="fw-semibold">{{ p.address or '—' }}</td>
+            </tr>
+            <tr>
+              <td class="text-muted">County</td>
+              <td>{{ p.county.value.title() if p.county else '—' }}</td>
+            </tr>
+            <tr>
+              <td class="text-muted">Parcel ID</td>
+              <td class="font-monospace small">{{ p.parcel_id or '—' }}</td>
+            </tr>
+            <tr>
+              <td class="text-muted">Lot Size</td>
+              <td>
+                {{ p.lot_sf | sqft if p.lot_sf else '—' }}<br>
+                <span class="text-muted small">{{ p.lot_sf | acres if p.lot_sf else '' }}</span>
+              </td>
+            </tr>
+            <tr>
+              <td class="text-muted">Zone</td>
+              <td>
+                <span class="badge bg-light text-dark border">{{ p.zone_code or '—' }}</span>
+                {% if zone_label %}<br><span class="text-muted small">{{ zone_label }}</span>{% endif %}
+              </td>
+            </tr>
+            <tr>
+              <td class="text-muted">Present Use</td>
+              <td>{{ p.present_use or '—' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Owner -->
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-transparent fw-bold small text-uppercase text-muted border-0 pb-0">👤 Owner</div>
+      <div class="card-body">
+        <table class="table table-sm table-borderless mb-0">
+          <tbody>
+            <tr><td class="text-muted" style="width:45%">Name</td><td class="fw-semibold">{{ p.owner_name or '—' }}</td></tr>
+            <tr><td class="text-muted">Mailing Address</td><td class="small">{{ p.owner_address or '—' }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Value -->
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-transparent fw-bold small text-uppercase text-muted border-0 pb-0">💰 Assessed Value</div>
+      <div class="card-body">
+        <table class="table table-sm table-borderless mb-0">
+          <tbody>
+            <tr><td class="text-muted" style="width:45%">Land Value</td><td>{{ p.assessed_value | money if p.assessed_value is not none else '—' }}</td></tr>
+            <tr><td class="text-muted">Improvements</td><td>{{ p.improvement_value | money if p.improvement_value is not none else '—' }}</td></tr>
+            <tr><td class="text-muted">Total Assessed</td><td class="fw-semibold fs-6">{{ p.total_value | money if p.total_value is not none else '—' }}</td></tr>
+            {% if p.last_sale_price %}
+            <tr><td class="text-muted">Last Sale Price</td><td>{{ p.last_sale_price | money }}</td></tr>
+            {% endif %}
+            {% if p.last_sale_date %}
+            <tr><td class="text-muted">Last Sale Date</td><td>{{ p.last_sale_date }}</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Right Column: Candidate Analysis + Map -->
+  <div class="col-md-6">
+
+    {% if c %}
+    <!-- Subdivision Potential -->
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-transparent fw-bold small text-uppercase text-muted border-0 pb-0">🏗️ Subdivision Potential</div>
+      <div class="card-body">
+        <div class="row g-2 align-items-center mb-3">
+          <div class="col-auto">
+            <div class="text-center p-3 rounded" style="background:#f0fdf4;min-width:90px">
+              <div class="fs-1 fw-bold text-success">{{ c.potential_splits or '—' }}</div>
+              <div class="small text-muted">Potential Splits</div>
+            </div>
+          </div>
+          <div class="col">
+            {% if c.has_critical_area_overlap %}<span class="badge bg-danger me-1 mb-1">🌿 Wetland Overlap</span>{% endif %}
+            {% if c.flagged_for_review %}<span class="badge bg-warning text-dark me-1 mb-1">🚜 Ag Zone</span>{% endif %}
+            {% if c.has_shoreline_overlap %}<span class="badge bg-info me-1 mb-1">🌊 Shoreline</span>{% endif %}
+            {% if not c.has_critical_area_overlap and not c.flagged_for_review and not c.has_shoreline_overlap %}
+            <span class="text-success small">✅ No critical area flags</span>
+            {% endif %}
+          </div>
+        </div>
+        <table class="table table-sm table-borderless mb-0">
+          {% if c.estimated_land_value is not none %}
+          <tr><td class="text-muted" style="width:55%">Est. Land Value</td><td class="fw-semibold">{{ c.estimated_land_value | money }}</td></tr>
+          {% endif %}
+          {% if c.estimated_dev_cost is not none %}
+          <tr><td class="text-muted">Est. Dev Cost</td><td>{{ c.estimated_dev_cost | money }}</td></tr>
+          {% endif %}
+          {% if c.estimated_build_cost is not none %}
+          <tr><td class="text-muted">Est. Build Cost</td><td>{{ c.estimated_build_cost | money }}</td></tr>
+          {% endif %}
+          {% if c.estimated_arv is not none %}
+          <tr><td class="text-muted">Est. ARV</td><td>{{ c.estimated_arv | money }}</td></tr>
+          {% endif %}
+          {% if c.estimated_profit is not none %}
+          <tr><td class="text-muted">Est. Profit</td><td class="fw-semibold text-success">{{ c.estimated_profit | money }}</td></tr>
+          {% endif %}
+          {% if c.estimated_margin_pct is not none %}
+          <tr><td class="text-muted">Margin</td><td>{{ "%.1f" | format(c.estimated_margin_pct) }}%</td></tr>
+          {% endif %}
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Satellite Map -->
+    {% if lat %}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-transparent fw-bold small text-uppercase text-muted border-0 pb-0">🛰️ Satellite View</div>
+      <div class="card-body p-0">
+        <div id="propmap" style="height:280px;border-radius:0 0 0.75rem 0.75rem;overflow:hidden"></div>
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+
+{% if c %}
+<!-- Rating + Comments Row -->
+<div class="row g-3 mt-1">
+
+  <!-- Rating -->
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-transparent fw-bold small text-uppercase text-muted border-0 pb-0">⭐ Rating</div>
+      <div class="card-body">
+        <div class="d-flex gap-3 align-items-center mb-3">
+          <button id="upBtn" class="btn {{ 'btn-success' if feedback.thumbs_up > 0 else 'btn-outline-success' }} btn-lg"
+                  onclick="doRate('up')">
+            👍 <span id="upCount">{{ feedback.thumbs_up }}</span>
+          </button>
+          <button id="downBtn" class="btn {{ 'btn-danger' if feedback.thumbs_down > 0 else 'btn-outline-danger' }} btn-lg"
+                  onclick="doRate('down')">
+            👎 <span id="downCount">{{ feedback.thumbs_down }}</span>
+          </button>
+        </div>
+        <div id="fbReason" class="d-none">
+          <select id="fbCat" class="form-select form-select-sm mb-2">
+            <option value="">Select reason…</option>
+            <option value="wrong_use">Wrong use type</option>
+            <option value="utility">Utility / govt owned</option>
+            <option value="hoa">HOA / association land</option>
+            <option value="not_buildable">Not buildable</option>
+            <option value="other">Other</option>
+          </select>
+          <textarea id="fbNotes" class="form-control form-control-sm mb-2" rows="2" placeholder="Notes (optional)…"></textarea>
+          <button class="btn btn-danger btn-sm" onclick="submitNeg()">Submit Feedback</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Comments -->
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-transparent fw-bold small text-uppercase text-muted border-0 pb-0">💬 Notes &amp; Comments</div>
+      <div class="card-body">
+        <div id="notesList" class="mb-3">
+          {% if notes %}
+          {% for note in notes %}
+          <div class="d-flex gap-2 mb-2">
+            <span class="text-muted">💬</span>
+            <div>
+              <div class="text-dark">{{ note.note }}</div>
+              <div class="text-muted small">{{ note.created_at.strftime('%Y-%m-%d %H:%M') if note.created_at else '' }}</div>
+            </div>
+          </div>
+          {% endfor %}
+          {% else %}
+          <div class="text-muted small" id="noNotes">No notes yet. Be the first to add one.</div>
+          {% endif %}
+        </div>
+        <div class="d-flex gap-2">
+          <input id="noteInput" type="text" class="form-control" placeholder="Add a note…"
+                 onkeydown="if(event.key==='Enter'){addNote()}">
+          <button class="btn btn-outline-primary" onclick="addNote()">Add note</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9/dist/leaflet.js"></script>
+<script>
+const BASE = "{{ base_url }}";
+{% if c %}
+const CANDIDATE_ID = "{{ c.id }}";
+{% else %}
+const CANDIDATE_ID = null;
+{% endif %}
+
+{% if lat %}
+// Init satellite map
+const propMap = L.map('propmap', {zoomControl: true, attributionControl: false}).setView([{{ lat }}, {{ lng }}], 17);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}').addTo(propMap);
+L.marker([{{ lat }}, {{ lng }}]).addTo(propMap);
+{% endif %}
+
+async function doRate(rating) {
+  if (!CANDIDATE_ID) return;
+  const params = new URLSearchParams({rating});
+  const cat = document.getElementById('fbCat');
+  const fbNotes = document.getElementById('fbNotes');
+  if (cat && cat.value) params.append('category', cat.value);
+  if (fbNotes && fbNotes.value) params.append('notes', fbNotes.value);
+  await fetch(`${BASE}/api/candidate/${CANDIDATE_ID}/feedback?${params}`, {method:'POST'});
+  const fb = await fetch(`${BASE}/api/candidate/${CANDIDATE_ID}/feedback`).then(r=>r.json());
+  document.getElementById('upCount').textContent = fb.thumbs_up;
+  document.getElementById('downCount').textContent = fb.thumbs_down;
+  document.getElementById('upBtn').className = `btn ${fb.thumbs_up > 0 ? 'btn-success' : 'btn-outline-success'} btn-lg`;
+  document.getElementById('downBtn').className = `btn ${fb.thumbs_down > 0 ? 'btn-danger' : 'btn-outline-danger'} btn-lg`;
+  if (rating === 'down') {
+    document.getElementById('fbReason').classList.remove('d-none');
+  } else {
+    document.getElementById('fbReason').classList.add('d-none');
+  }
+}
+
+async function submitNeg() {
+  if (!CANDIDATE_ID) return;
+  const cat = document.getElementById('fbCat').value;
+  const fbNotes = document.getElementById('fbNotes').value;
+  const params = new URLSearchParams({rating:'down'});
+  if (cat) params.append('category', cat);
+  if (fbNotes) params.append('notes', fbNotes);
+  await fetch(`${BASE}/api/candidate/${CANDIDATE_ID}/feedback?${params}`, {method:'POST'});
+  document.getElementById('fbReason').innerHTML = '<div class="text-success">✅ Feedback saved</div>';
+}
+
+async function addNote() {
+  if (!CANDIDATE_ID) return;
+  const inp = document.getElementById('noteInput');
+  const note = inp.value.trim();
+  if (!note) return;
+  await fetch(`${BASE}/api/candidate/${CANDIDATE_ID}/notes`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({note}),
+  });
+  inp.value = '';
+  // Reload all notes
+  const notes = await fetch(`${BASE}/api/candidate/${CANDIDATE_ID}/notes?limit=20`).then(r=>r.json());
+  const html = notes.length
+    ? notes.map(n => `
+        <div class="d-flex gap-2 mb-2">
+          <span class="text-muted">💬</span>
+          <div>
+            <div class="text-dark">${escHtml(n.note)}</div>
+            <div class="text-muted small">${n.created_at ? n.created_at.slice(0,16).replace('T',' ') : ''}</div>
+          </div>
+        </div>`).join('')
+    : '<div class="text-muted small">No notes yet.</div>';
+  document.getElementById('notesList').innerHTML = html;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+{% endblock %}

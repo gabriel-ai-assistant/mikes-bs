@@ -31,10 +31,14 @@ def upgrade() -> None:
             annualized_return_estimate FLOAT,
             reasons                   JSONB,
             underwriting_json         JSONB,
-            analysis_timestamp        TIMESTAMP NOT NULL DEFAULT now(),
-            CONSTRAINT uq_deal_parcel_date_version
-                UNIQUE (parcel_id, (run_date::date), assumptions_version)
+            analysis_timestamp        TIMESTAMP NOT NULL DEFAULT now()
         )
+    """)
+
+    # Functional unique index (can't be inline in CREATE TABLE for older PG)
+    op.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_deal_parcel_date_version
+        ON deal_analysis (parcel_id, (run_date::date), assumptions_version)
     """)
 
     op.execute("CREATE INDEX IF NOT EXISTS idx_deal_analysis_parcel     ON deal_analysis(parcel_id)")
@@ -82,4 +86,5 @@ def downgrade() -> None:
     op.execute("DROP INDEX IF EXISTS idx_deal_analysis_tier")
     op.execute("DROP INDEX IF EXISTS idx_deal_analysis_run")
     op.execute("DROP INDEX IF EXISTS idx_deal_analysis_parcel")
+    op.execute("DROP INDEX IF EXISTS uq_deal_parcel_date_version")
     op.execute("DROP TABLE IF EXISTS deal_analysis")

@@ -180,7 +180,9 @@ def candidate_detail(candidate_id: str, session: Session = Depends(db)):
 
     return {
         "id": str(c.id),
+        "parcel_id": p.parcel_id,
         "tier": c.score_tier.value if c.score_tier else None,
+        "score": c.score,
         "address": p.address,
         "county": p.county.value.title() if p.county else None,
         "lot_sf": p.lot_sf,
@@ -228,6 +230,22 @@ async def submit_feedback(
     return {"ok": True, "rating": rating}
 
 
+@app.get("/api/candidate/{candidate_id}/feedback")
+def get_feedback(candidate_id: str, session: Session = Depends(db)):
+    from sqlalchemy import text as sqlt
+    row = session.execute(sqlt("""
+        SELECT
+            COUNT(*) FILTER (WHERE rating='up') as thumbs_up,
+            COUNT(*) FILTER (WHERE rating='down') as thumbs_down
+        FROM candidate_feedback
+        WHERE candidate_id = :cid
+    """), {"cid": candidate_id}).fetchone()
+    return {
+        "thumbs_up": int(row.thumbs_up or 0),
+        "thumbs_down": int(row.thumbs_down or 0),
+    }
+
+
 @app.get("/api/feedback/stats")
 def feedback_stats(session: Session = Depends(db)):
     from sqlalchemy import text as sqlt
@@ -238,6 +256,115 @@ def feedback_stats(session: Session = Depends(db)):
         ORDER BY cnt DESC
     """)).mappings().all()
     return [dict(r) for r in rows]
+
+
+# ── Candidate Notes ────────────────────────────────────────────────────────
+
+@app.post("/api/candidate/{candidate_id}/notes")
+async def add_note(candidate_id: str, request: Request, session: Session = Depends(db)):
+    from sqlalchemy import text as sqlt
+    data = await request.json()
+    note_text = data.get("note", "").strip()
+    if not note_text:
+        return JSONResponse({"error": "note is required"}, status_code=400)
+    author = data.get("author", "user")
+    session.execute(sqlt("""
+        INSERT INTO candidate_notes (candidate_id, note, author)
+        VALUES (:cid, :note, :author)
+    """), {"cid": candidate_id, "note": note_text, "author": author})
+    session.commit()
+    return {"ok": True}
+
+
+@app.get("/api/candidate/{candidate_id}/notes")
+def get_notes(candidate_id: str, limit: int = Query(10), session: Session = Depends(db)):
+    from sqlalchemy import text as sqlt
+    rows = session.execute(sqlt("""
+        SELECT id, note, author, created_at
+        FROM candidate_notes
+        WHERE candidate_id = :cid
+        ORDER BY created_at DESC
+        LIMIT :lim
+    """), {"cid": candidate_id, "lim": limit}).mappings().all()
+    return [
+        {
+            "id": r["id"],
+            "note": r["note"],
+            "author": r["author"],
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+        }
+        for r in rows
+    ]
+
+
+# ── Property Detail Page ──────────────────────────────────────────────────
+
+@app.get("/property/{parcel_id}", response_class=HTMLResponse)
+def property_detail(parcel_id: str, request: Request, session: Session = Depends(db)):
+    p = session.query(Parcel).filter(Parcel.parcel_id == parcel_id).first()
+    if not p:
+        return HTMLResponse("<h3>Property not found</h3>", status_code=404)
+
+    # Get best candidate for this parcel
+    c = (
+        session.query(Candidate)
+        .filter(Candidate.parcel_id == p.id)
+        .order_by(Candidate.score.desc())
+        .first()
+    )
+
+    # Get zone label
+    zone_label = None
+    if p.zone_code and c:
+        county_str = p.county.value if p.county else "snohomish"
+        zr = session.query(ZoningRule).filter(
+            ZoningRule.county == county_str,
+            ZoningRule.zone_code == p.zone_code
+        ).first()
+        zone_label = zr.notes if zr else None
+
+    # Get centroid coordinates
+    coords = session.execute(text("""
+        SELECT ST_Y(ST_Centroid(geometry)) as lat, ST_X(ST_Centroid(geometry)) as lng
+        FROM parcels WHERE id = :pid
+    """), {"pid": str(p.id)}).fetchone()
+    lat = float(coords.lat) if coords and coords.lat else None
+    lng = float(coords.lng) if coords and coords.lng else None
+
+    # Get notes and feedback if we have a candidate
+    notes = []
+    feedback = {"thumbs_up": 0, "thumbs_down": 0}
+    if c:
+        note_rows = session.execute(text("""
+            SELECT note, author, created_at FROM candidate_notes
+            WHERE candidate_id = :cid ORDER BY created_at DESC LIMIT 20
+        """), {"cid": str(c.id)}).mappings().all()
+        notes = [dict(r) for r in note_rows]
+
+        fb_row = session.execute(text("""
+            SELECT
+                COUNT(*) FILTER (WHERE rating='up') as thumbs_up,
+                COUNT(*) FILTER (WHERE rating='down') as thumbs_down
+            FROM candidate_feedback WHERE candidate_id = :cid
+        """), {"cid": str(c.id)}).fetchone()
+        feedback = {
+            "thumbs_up": int(fb_row.thumbs_up or 0),
+            "thumbs_down": int(fb_row.thumbs_down or 0),
+        }
+
+    return templates.TemplateResponse("property.html", {
+        "request": request,
+        "p": p,
+        "c": c,
+        "zone_label": zone_label,
+        "lat": lat,
+        "lng": lng,
+        "notes": notes,
+        "feedback": feedback,
+        "fmt_money": fmt_money,
+        "fmt_acres": fmt_acres,
+        "fmt_sqft": fmt_sqft,
+    })
 
 
 # ── Leads ──────────────────────────────────────────────────────────────────
@@ -293,9 +420,11 @@ def map_points(
         q = session.query(
             Candidate.id,
             Candidate.score_tier,
+            Candidate.score,
             Candidate.potential_splits,
             Candidate.has_critical_area_overlap,
             Candidate.flagged_for_review,
+            Parcel.parcel_id,
             Parcel.address,
             Parcel.owner_name,
             Parcel.lot_sf,
@@ -317,7 +446,9 @@ def map_points(
         return [
             {
                 "id": str(r.id),
+                "parcel_id": r.parcel_id,
                 "tier": r.score_tier.value if r.score_tier else "C",
+                "score": r.score,
                 "address": r.address or "No address",
                 "owner": r.owner_name or "Unknown owner",
                 "splits": r.potential_splits,
@@ -335,7 +466,7 @@ def map_points(
 
     # Fallback: raw parcels
     rows = session.execute(text("""
-        SELECT p.id::text, p.address, p.owner_name, p.lot_sf, p.assessed_value,
+        SELECT p.id::text, p.parcel_id, p.address, p.owner_name, p.lot_sf, p.assessed_value,
                p.zone_code,
                ST_Y(ST_Centroid(p.geometry)) AS lat,
                ST_X(ST_Centroid(p.geometry)) AS lng
@@ -347,7 +478,8 @@ def map_points(
 
     return [
         {
-            "id": r["id"], "tier": "parcel",
+            "id": r["id"], "parcel_id": r["parcel_id"], "tier": "parcel",
+            "score": None,
             "address": r["address"] or "No address",
             "owner": r["owner_name"] or "Unknown",
             "splits": None, "lot_sf": r["lot_sf"],

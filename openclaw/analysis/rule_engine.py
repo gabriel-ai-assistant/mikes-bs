@@ -241,8 +241,8 @@ def rescore_all() -> dict:
             UPDATE candidates SET
                 score_tier = v.tier::scoretierenum,
                 score = v.score,
-                tags = v.tags,
-                reason_codes = v.reasons
+                tags = v.tags::text[],
+                reason_codes = v.reasons::text[]
             FROM (VALUES %s) AS v(id, tier, score, tags, reasons)
             WHERE candidates.id = v.id::uuid
         """, [(u['id'], u['tier'], u['score'], u['tags'], u['reasons']) for u in updates])
