@@ -25,6 +25,9 @@ class ScoreTierEnum(enum.Enum):
     A = "A"
     B = "B"
     C = "C"
+    D = "D"
+    E = "E"
+    F = "F"
 
 
 class LeadStatusEnum(enum.Enum):

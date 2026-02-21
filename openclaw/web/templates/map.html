@@ -9,7 +9,11 @@
       <span class="fw-semibold text-muted small">Filter:</span>
       <button class="btn btn-sm btn-success active" onclick="filterTier('')" id="btn-all">All</button>
       <button class="btn btn-sm btn-outline-success" onclick="filterTier('A')" id="btn-A">🏆 Tier A</button>
-      <button class="btn btn-sm btn-outline-warning" onclick="filterTier('B')" id="btn-B">✅ Tier B</button>
+      <button class="btn btn-sm btn-outline-primary" onclick="filterTier('B')" id="btn-B">✅ Tier B</button>
+      <button class="btn btn-sm btn-outline-warning" onclick="filterTier('C')" id="btn-C">⬜ Tier C</button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="filterTier('D')" id="btn-D" style="color:#fd7e14;border-color:#fd7e14">🟠 Tier D</button>
+      <button class="btn btn-sm btn-outline-danger" onclick="filterTier('E')" id="btn-E">🔴 Tier E</button>
+      <button class="btn btn-sm btn-outline-dark" onclick="filterTier('F')" id="btn-F">⚫ Tier F</button>
       <div class="vr"></div>
       <span class="small text-muted" id="countLabel">Loading…</span>
       <div class="vr"></div>
@@ -25,10 +29,14 @@
   <div class="card-body py-2">
     <div class="d-flex gap-3 flex-wrap align-items-center">
       <span class="fw-semibold text-muted small">Legend:</span>
-      <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#198754;"></span> Tier A — 4+ splits</span>
-      <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#ffc107;"></span> Tier B — 2-3 splits</span>
+      <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#198754;"></span> Tier A — Prime</span>
+      <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#0d6efd;"></span> Tier B — Good</span>
+      <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#ffc107;"></span> Tier C — Decent</span>
+      <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#fd7e14;"></span> Tier D — Marginal</span>
+      <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#dc3545;"></span> Tier E — Weak</span>
+      <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#212529;"></span> Tier F — Skip</span>
       <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#dc3545;border:2px solid #9b1c1c;"></span> Wetland flagged</span>
-      <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#0d6efd;"></span> Raw parcel</span>
+      <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#6c757d;"></span> Raw parcel</span>
     </div>
   </div>
 </div>
@@ -72,8 +80,12 @@ let currentTier = '';
 function tierColor(tier, wetland) {
   if (wetland) return '#dc3545';
   if (tier === 'A') return '#198754';
-  if (tier === 'B') return '#ffc107';
-  if (tier === 'parcel') return '#0d6efd';
+  if (tier === 'B') return '#0d6efd';
+  if (tier === 'C') return '#ffc107';
+  if (tier === 'D') return '#fd7e14';
+  if (tier === 'E') return '#dc3545';
+  if (tier === 'F') return '#212529';
+  if (tier === 'parcel') return '#6c757d';
   return '#6c757d';
 }
 
@@ -138,15 +150,23 @@ async function loadPoints(tier = '') {
 
 function filterTier(tier) {
   currentTier = tier;
-  ['all','A','B'].forEach(t => {
+  ['all','A','B','C','D','E','F'].forEach(t => {
     const btn = document.getElementById('btn-' + t);
-    if (btn) btn.className = btn.className.replace(' active','').replace('btn-success','btn-outline-success').replace('btn-warning','btn-outline-warning');
+    if (btn) btn.className = btn.className.replace(' active','')
+      .replace('btn-success','btn-outline-success')
+      .replace('btn-primary','btn-outline-primary')
+      .replace('btn-warning','btn-outline-warning')
+      .replace('btn-danger','btn-outline-danger')
+      .replace('btn-dark','btn-outline-dark');
   });
   const active = document.getElementById('btn-' + (tier || 'all'));
   if (active) {
     active.className = active.className
       .replace('btn-outline-success','btn-success')
-      .replace('btn-outline-warning','btn-warning') + ' active';
+      .replace('btn-outline-primary','btn-primary')
+      .replace('btn-outline-warning','btn-warning')
+      .replace('btn-outline-danger','btn-danger')
+      .replace('btn-outline-dark','btn-dark') + ' active';
   }
   loadPoints(tier);
 }

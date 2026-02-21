@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Dashboard — Mike's BS{% endblock %}
 {% block content %}
-<div class="row g-3 mb-4">
+<div class="row g-3 mb-2">
   <div class="col-6 col-md-3">
     <div class="card text-center border-0 shadow-sm h-100">
       <div class="card-body">
@@ -21,16 +21,67 @@
   <div class="col-6 col-md-3">
     <div class="card text-center border-0 shadow-sm h-100">
       <div class="card-body">
-        <div class="display-6 fw-bold text-warning">{{ "{:,}".format(tier_a) }}</div>
-        <div class="text-muted small">Tier A (Hot Deals)</div>
+        <div class="display-6 fw-bold text-warning">{{ "{:,}".format(new_leads) }}</div>
+        <div class="text-muted small">New Leads (7d)</div>
       </div>
     </div>
   </div>
   <div class="col-6 col-md-3">
     <div class="card text-center border-0 shadow-sm h-100">
       <div class="card-body">
-        <div class="display-6 fw-bold text-info">{{ "{:,}".format(tier_b) }}</div>
-        <div class="text-muted small">Tier B (Good Deals)</div>
+        <div class="display-6 fw-bold text-info">{{ "{:,}".format(total_leads) }}</div>
+        <div class="text-muted small">Total Leads</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-2">
+    <div class="card text-center border-0 shadow-sm h-100" style="border-top: 4px solid #198754 !important;">
+      <div class="card-body py-2">
+        <div class="display-6 fw-bold text-success">{{ "{:,}".format(tier_a) }}</div>
+        <div class="text-muted small">Tier A — Prime</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card text-center border-0 shadow-sm h-100" style="border-top: 4px solid #0d6efd !important;">
+      <div class="card-body py-2">
+        <div class="display-6 fw-bold text-primary">{{ "{:,}".format(tier_b) }}</div>
+        <div class="text-muted small">Tier B — Good</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card text-center border-0 shadow-sm h-100" style="border-top: 4px solid #ffc107 !important;">
+      <div class="card-body py-2">
+        <div class="display-6 fw-bold text-warning">{{ "{:,}".format(tier_c) }}</div>
+        <div class="text-muted small">Tier C — Decent</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card text-center border-0 shadow-sm h-100" style="border-top: 4px solid #fd7e14 !important;">
+      <div class="card-body py-2">
+        <div class="display-6 fw-bold" style="color:#fd7e14">{{ "{:,}".format(tier_d) }}</div>
+        <div class="text-muted small">Tier D — Marginal</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card text-center border-0 shadow-sm h-100" style="border-top: 4px solid #dc3545 !important;">
+      <div class="card-body py-2">
+        <div class="display-6 fw-bold text-danger">{{ "{:,}".format(tier_e) }}</div>
+        <div class="text-muted small">Tier E — Weak</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card text-center border-0 shadow-sm h-100" style="border-top: 4px solid #212529 !important;">
+      <div class="card-body py-2">
+        <div class="display-6 fw-bold text-dark">{{ "{:,}".format(tier_f) }}</div>
+        <div class="text-muted small">Tier F — Skip</div>
       </div>
     </div>
   </div>
@@ -117,10 +168,10 @@
 new Chart(document.getElementById('tierChart'), {
   type: 'doughnut',
   data: {
-    labels: ['Tier A', 'Tier B', 'Tier C'],
+    labels: ['Tier A', 'Tier B', 'Tier C', 'Tier D', 'Tier E', 'Tier F'],
     datasets: [{
       data: {{ tier_data_json }},
-      backgroundColor: ['#198754','#ffc107','#6c757d'],
+      backgroundColor: ['#198754','#0d6efd','#ffc107','#fd7e14','#dc3545','#212529'],
       borderWidth: 2,
     }]
   },

@@ -15,6 +15,9 @@
           <option value="A" {% if tier=='A' %}selected{% endif %}>🏆 Tier A</option>
           <option value="B" {% if tier=='B' %}selected{% endif %}>✅ Tier B</option>
           <option value="C" {% if tier=='C' %}selected{% endif %}>⬜ Tier C</option>
+          <option value="D" {% if tier=='D' %}selected{% endif %}>🟠 Tier D</option>
+          <option value="E" {% if tier=='E' %}selected{% endif %}>🔴 Tier E</option>
+          <option value="F" {% if tier=='F' %}selected{% endif %}>⚫ Tier F</option>
         </select>
       </div>
       <div class="col-6 col-md-2">
@@ -68,9 +71,17 @@
             {% if c.score_tier and c.score_tier.value == 'A' %}
               <span class="badge bg-success fs-6">A</span>
             {% elif c.score_tier and c.score_tier.value == 'B' %}
-              <span class="badge bg-warning text-dark fs-6">B</span>
+              <span class="badge bg-primary fs-6">B</span>
+            {% elif c.score_tier and c.score_tier.value == 'C' %}
+              <span class="badge bg-warning text-dark fs-6">C</span>
+            {% elif c.score_tier and c.score_tier.value == 'D' %}
+              <span class="badge fs-6 text-white" style="background:#fd7e14">D</span>
+            {% elif c.score_tier and c.score_tier.value == 'E' %}
+              <span class="badge bg-danger fs-6">E</span>
+            {% elif c.score_tier and c.score_tier.value == 'F' %}
+              <span class="badge bg-dark fs-6">F</span>
             {% else %}
-              <span class="badge bg-secondary fs-6">C</span>
+              <span class="badge bg-secondary fs-6">?</span>
             {% endif %}
           </td>
           <td class="fw-semibold">{{ p.address or "—" }}</td>

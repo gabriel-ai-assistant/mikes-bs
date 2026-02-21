@@ -63,7 +63,10 @@ def dashboard(request: Request, session: Session = Depends(db)):
     tier_a = tier_counts.get(ScoreTierEnum.A, 0)
     tier_b = tier_counts.get(ScoreTierEnum.B, 0)
     tier_c = tier_counts.get(ScoreTierEnum.C, 0)
-    total_candidates = tier_a + tier_b + tier_c
+    tier_d = tier_counts.get(ScoreTierEnum.D, 0)
+    tier_e = tier_counts.get(ScoreTierEnum.E, 0)
+    tier_f = tier_counts.get(ScoreTierEnum.F, 0)
+    total_candidates = tier_a + tier_b + tier_c + tier_d + tier_e + tier_f
 
     week_ago = datetime.utcnow() - timedelta(days=7)
     new_leads = session.query(func.count(Lead.id)).filter(Lead.created_at >= week_ago).scalar() or 0
@@ -84,10 +87,11 @@ def dashboard(request: Request, session: Session = Depends(db)):
         "total_parcels": total_parcels,
         "total_candidates": total_candidates,
         "tier_a": tier_a, "tier_b": tier_b, "tier_c": tier_c,
+        "tier_d": tier_d, "tier_e": tier_e, "tier_f": tier_f,
         "new_leads": new_leads,
         "total_leads": total_leads,
         "top5": top5,
-        "tier_data_json": json.dumps([tier_a, tier_b, tier_c]),
+        "tier_data_json": json.dumps([tier_a, tier_b, tier_c, tier_d, tier_e, tier_f]),
     })
 
 
@@ -114,7 +118,7 @@ def candidates_page(
             Parcel.owner_name.ilike(f"%{search}%") |
             Parcel.owner_address.ilike(f"%{search}%")
         )
-    if tier in ("A", "B", "C"):
+    if tier in ("A", "B", "C", "D", "E", "F"):
         q = q.filter(Candidate.score_tier == ScoreTierEnum(tier))
     if wetland == "1":
         q = q.filter(Candidate.has_critical_area_overlap == True)
@@ -299,7 +303,7 @@ def map_points(
             func.ST_X(func.ST_Centroid(Parcel.geometry)).label("lng"),
         ).join(Parcel).filter(Parcel.geometry.isnot(None))
 
-        if tier in ("A", "B", "C"):
+        if tier in ("A", "B", "C", "D", "E", "F"):
             q = q.filter(Candidate.score_tier == ScoreTierEnum(tier))
         if ag_only:
             q = q.filter(Candidate.flagged_for_review == True)
