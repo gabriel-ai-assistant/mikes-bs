@@ -33,9 +33,6 @@ CANDIDATE_SQL = text("""
         AND p.zone_code = z.zone_code
     WHERE
         p.lot_sf >= (z.min_lot_sf * 2.1)
-        AND UPPER(COALESCE(p.present_use, '')) IN (
-            'SINGLE FAMILY', 'VACANT RES', 'VACANT', 'UNDEVELOPED'
-        )
         AND NOT EXISTS (
             SELECT 1 FROM critical_areas ca
             WHERE ST_Intersects(p.geometry, ca.geometry)
