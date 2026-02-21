@@ -24,6 +24,8 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql+psycopg2://openclaw:password@postgis:5432/openclaw
+    volumes:
+      - ./openclaw:/app/openclaw
 
   web:
     build: .
@@ -36,6 +38,8 @@ services:
     depends_on:
       postgis:
         condition: service_healthy
+    volumes:
+      - ./openclaw:/app/openclaw
 
 volumes:
   pgdata:
