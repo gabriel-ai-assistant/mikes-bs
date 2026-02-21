@@ -254,6 +254,38 @@ async function openCandidateModal(id, parcelId='') {
   const tagsHtml = (d.tags || []).map(t =>
     `<span class="badge me-1 mb-1" style="background:#e8f4fd;color:#0d6efd;border:1px solid #bee5fd">${t}</span>`
   ).join('');
+  const sub = d.subdivision || null;
+  const subBadgeCls = sub?.feasibility === 'LIKELY'
+    ? 'bg-success'
+    : (sub?.feasibility === 'POSSIBLE'
+      ? 'bg-warning text-dark'
+      : (sub?.feasibility === 'UNLIKELY' ? 'bg-danger' : 'bg-secondary'));
+  const platMeta = sub?.plat_type === 'SHORT_PLAT'
+    ? '<span class="badge bg-success-subtle text-success border border-success me-2">SHORT PLAT</span><span class="text-muted small">~3-6 months · Admin approval</span>'
+    : (sub?.plat_type === 'LONG_PLAT'
+      ? '<span class="badge text-dark border me-2" style="background:#fff3cd;border-color:#ffda6a !important;">LONG PLAT</span><span class="text-muted small">2-3 years · Full process</span>'
+      : '<span class="badge bg-secondary">NOT FEASIBLE</span>');
+  const subFlagsHtml = (sub?.flags || []).map(f =>
+    `<span class="badge me-1 mb-1 ${f.startsWith('EDGE_') ? 'bg-success-subtle text-success border border-success' : (f.startsWith('RISK_') ? 'bg-danger-subtle text-danger border border-danger' : 'bg-light text-dark border')}">${escHtml(f)}</span>`
+  ).join('');
+  const subdivisionHtml = sub ? `
+      <div class="col-12">
+        <h6 class="fw-bold text-muted text-uppercase small mb-2">🧭 Subdivision Assessment</h6>
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <span class="badge ${subBadgeCls} px-2 py-1">${sub.feasibility || 'UNKNOWN'}</span>
+          <span class="small text-muted">Feasible Splits: <span class="fw-semibold text-dark">${sub.feasible_splits ?? '—'}</span></span>
+        </div>
+        <div class="mb-2">${platMeta}</div>
+        <div class="mb-2">
+          <span class="${sub.sewer ? 'text-success' : 'text-warning'} small fw-semibold me-3">${sub.sewer ? '✅ Sewer available' : '⚠ Septic required'}</span>
+          <span class="${sub.access ? 'text-success' : 'text-danger'} small fw-semibold">${sub.access ? '✅ Access confirmed' : '⚠ Access unknown'}</span>
+        </div>
+        <div class="small text-muted mb-1">Subdivision Score: <span class="fw-semibold text-dark">${sub.score ?? 0}</span>/100</div>
+        <div class="progress" style="height:10px">
+          <div class="progress-bar ${(sub.score ?? 0) >= 70 ? 'bg-success' : ((sub.score ?? 0) >= 40 ? 'bg-warning' : 'bg-danger')}" style="width:${Math.max(0, Math.min(100, sub.score ?? 0))}%"></div>
+        </div>
+        ${subFlagsHtml ? `<div class="mt-2">${subFlagsHtml}</div>` : ''}
+      </div>` : '';
 
   const notesHtml = notesData.length
     ? notesData.map(n => `
@@ -316,6 +348,8 @@ async function openCandidateModal(id, parcelId='') {
           </div>
         </div>
       </div>
+
+      ${subdivisionHtml}
 
       <div class="col-12">
         <h6 class="fw-bold text-muted text-uppercase small mb-2">🛰️ Satellite View</h6>

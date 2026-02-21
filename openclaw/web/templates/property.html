@@ -197,6 +197,70 @@
         </table>
       </div>
     </div>
+
+    {% set sub_feas = c.subdivision_feasibility or 'UNKNOWN' %}
+    {% set sub_score = c.subdivisibility_score or 0 %}
+    {% set sub_badge_cls = 'bg-success' if sub_feas == 'LIKELY' else ('bg-warning text-dark' if sub_feas == 'POSSIBLE' else ('bg-danger' if sub_feas == 'UNLIKELY' else 'bg-secondary')) %}
+    {% set ns = namespace(feasible_splits=None, plat_type=None) %}
+    {% for r in c.reason_codes or [] %}
+      {% if r.startswith('SUBDIV_FEASIBLE_SPLITS_') and ns.feasible_splits is none %}
+        {% set ns.feasible_splits = r.split('_')[-1] %}
+      {% endif %}
+      {% if r.startswith('SUBDIV_PLAT_TYPE_') and ns.plat_type is none %}
+        {% set ns.plat_type = r.split('SUBDIV_PLAT_TYPE_')[1] %}
+      {% endif %}
+    {% endfor %}
+    {% set sewer_available = 'SEWER_AVAILABLE' in (c.reason_codes or []) %}
+    {% set access_confirmed = 'ACCESS_CONFIRMED' in (c.reason_codes or []) %}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-transparent fw-bold small text-uppercase text-muted border-0 pb-0">🧭 Can It Be Subdivided?</div>
+      <div class="card-body">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+          <span class="badge {{ sub_badge_cls }} fs-5 px-3 py-2">{{ sub_feas }}</span>
+          <div class="text-muted small">Feasible Splits: <span class="fw-semibold text-dark">{{ ns.feasible_splits or '—' }}</span></div>
+        </div>
+
+        <div class="mb-2">
+          {% if ns.plat_type == 'SHORT_PLAT' %}
+          <span class="badge bg-success-subtle text-success border border-success me-2">SHORT PLAT</span>
+          <span class="text-muted small">~3-6 months · Admin approval</span>
+          {% elif ns.plat_type == 'LONG_PLAT' %}
+          <span class="badge text-dark border me-2" style="background:#fff3cd;border-color:#ffda6a !important;">LONG PLAT</span>
+          <span class="text-muted small">2-3 years · Full process</span>
+          {% else %}
+          <span class="badge bg-secondary">NOT FEASIBLE</span>
+          {% endif %}
+        </div>
+
+        <div class="mb-2">
+          {% if sewer_available %}
+          <span class="text-success small fw-semibold me-3">✅ Sewer available</span>
+          {% else %}
+          <span class="text-warning small fw-semibold me-3">⚠ Septic required</span>
+          {% endif %}
+          {% if access_confirmed %}
+          <span class="text-success small fw-semibold">✅ Access confirmed</span>
+          {% else %}
+          <span class="text-danger small fw-semibold">⚠ Access unknown</span>
+          {% endif %}
+        </div>
+
+        <div class="mb-2">
+          <div class="small text-muted mb-1">Subdivision Score: <span class="fw-semibold text-dark">{{ sub_score }}</span>/100</div>
+          <div class="progress" role="progressbar" aria-label="Subdivision score" aria-valuenow="{{ sub_score }}" aria-valuemin="0" aria-valuemax="100" style="height:10px">
+            <div class="progress-bar {{ 'bg-success' if sub_score >= 70 else ('bg-warning' if sub_score >= 40 else 'bg-danger') }}" style="width: {{ sub_score }}%"></div>
+          </div>
+        </div>
+
+        {% if c.subdivision_flags %}
+        <div class="mt-3">
+          {% for flag in c.subdivision_flags %}
+          <span class="badge me-1 mb-1 {{ 'bg-success-subtle text-success border border-success' if flag.startswith('EDGE_') else ('bg-danger-subtle text-danger border border-danger' if flag.startswith('RISK_') else 'bg-light text-dark border') }}">{{ flag }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
     {% endif %}
 
     <!-- Satellite Map -->

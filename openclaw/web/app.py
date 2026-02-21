@@ -277,6 +277,7 @@ def candidate_detail(candidate_id: str, session: Session = Depends(db)):
     """), {"pid": str(c.parcel_id)}).fetchone()
     lat = float(coords.lat) if coords and coords.lat else None
     lng = float(coords.lng) if coords and coords.lng else None
+    reason_codes = c.reason_codes or []
 
     return {
         "id": str(c.id),
@@ -303,7 +304,22 @@ def candidate_detail(candidate_id: str, session: Session = Depends(db)):
         "ag_flag": c.flagged_for_review,
         "shoreline_flag": c.has_shoreline_overlap,
         "tags": c.tags or [],
-        "reason_codes": c.reason_codes or [],
+        "reason_codes": reason_codes,
+        "subdivision": {
+            "feasibility": c.subdivision_feasibility,
+            "score": c.subdivisibility_score,
+            "flags": c.subdivision_flags or [],
+            "feasible_splits": next(
+                (int(r.split("_")[-1]) for r in reason_codes if r.startswith("SUBDIV_FEASIBLE_SPLITS_")),
+                None,
+            ),
+            "plat_type": next(
+                (r.split("SUBDIV_PLAT_TYPE_")[1] for r in reason_codes if r.startswith("SUBDIV_PLAT_TYPE_")),
+                None,
+            ),
+            "sewer": "SEWER_AVAILABLE" in reason_codes,
+            "access": "ACCESS_CONFIRMED" in reason_codes,
+        },
         "lat": lat,
         "lng": lng,
     }

@@ -13,6 +13,7 @@ import logging
 from typing import Optional
 from sqlalchemy import text
 from openclaw.db.session import SessionLocal
+from openclaw.analysis.subdivision import assess_subdivision, SUBDIVISION_SCORE_EFFECTS
 
 logger = logging.getLogger(__name__)
 
@@ -197,6 +198,8 @@ def rescore_all() -> dict:
                 c.has_critical_area_overlap,
                 c.flagged_for_review,
                 c.uga_outside,
+                c.tags as existing_tags,
+                c.reason_codes as existing_reasons,
                 p.present_use, p.owner_name, p.zone_code,
                 p.lot_sf, p.assessed_value, p.improvement_value, p.total_value,
                 p.address, p.county
@@ -210,15 +213,58 @@ def rescore_all() -> dict:
         excluded = 0
         updates = []
 
+        def _merge_unique(*items) -> list[str]:
+            seen = set()
+            merged: list[str] = []
+            for group in items:
+                for value in (group or []):
+                    if not value or value in seen:
+                        continue
+                    seen.add(value)
+                    merged.append(value)
+            return merged
+
         for row in rows:
             candidate = dict(row)
+            parcel = {
+                "zone_code": row.get("zone_code"),
+                "lot_sf": row.get("lot_sf"),
+                "address": row.get("address"),
+            }
             tier, score, exclude, tags, reasons = evaluate_candidate(candidate, rules)
+            sub = assess_subdivision(candidate, parcel)
+            for flag in sub.flags:
+                score += SUBDIVISION_SCORE_EFFECTS.get(flag, 0)
+            score = min(max(score, 0), 100)
+
+            merged_tags = _merge_unique(row.get("existing_tags"), tags, sub.flags)
+            merged_reasons = _merge_unique(row.get("existing_reasons"), reasons, sub.reasons)
+
             if exclude:
                 excluded += 1
-                updates.append({'id': str(row['candidate_id']), 'tier': 'F', 'score': 0, 'tags': [], 'reasons': []})
+                updates.append({
+                    'id': str(row['candidate_id']),
+                    'tier': 'F',
+                    'score': 0,
+                    'tags': merged_tags,
+                    'reasons': merged_reasons,
+                    'sub_score': sub.score,
+                    'sub_feasibility': sub.feasibility,
+                    'sub_flags': sub.flags,
+                })
             else:
+                tier = score_to_tier(score)
                 tier_counts[tier] = tier_counts.get(tier, 0) + 1
-                updates.append({'id': str(row['candidate_id']), 'tier': tier, 'score': score, 'tags': tags, 'reasons': reasons})
+                updates.append({
+                    'id': str(row['candidate_id']),
+                    'tier': tier,
+                    'score': score,
+                    'tags': merged_tags,
+                    'reasons': merged_reasons,
+                    'sub_score': sub.score,
+                    'sub_feasibility': sub.feasibility,
+                    'sub_flags': sub.flags,
+                })
 
         # Ensure columns exist
         session.execute(text(
@@ -229,6 +275,15 @@ def rescore_all() -> dict:
         ))
         session.execute(text(
             "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS reason_codes TEXT[] DEFAULT '{}'"
+        ))
+        session.execute(text(
+            "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS subdivisibility_score INTEGER DEFAULT 0"
+        ))
+        session.execute(text(
+            "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS subdivision_feasibility VARCHAR(20) DEFAULT 'UNKNOWN'"
+        ))
+        session.execute(text(
+            "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS subdivision_flags TEXT[] DEFAULT '{}'"
         ))
         session.commit()
 
@@ -242,10 +297,25 @@ def rescore_all() -> dict:
                 score_tier = v.tier::scoretierenum,
                 score = v.score,
                 tags = v.tags::text[],
-                reason_codes = v.reasons::text[]
-            FROM (VALUES %s) AS v(id, tier, score, tags, reasons)
+                reason_codes = v.reasons::text[],
+                subdivisibility_score = v.sub_score,
+                subdivision_feasibility = v.sub_feasibility,
+                subdivision_flags = v.sub_flags::text[]
+            FROM (VALUES %s) AS v(id, tier, score, tags, reasons, sub_score, sub_feasibility, sub_flags)
             WHERE candidates.id = v.id::uuid
-        """, [(u['id'], u['tier'], u['score'], u['tags'], u['reasons']) for u in updates])
+        """, [
+            (
+                u['id'],
+                u['tier'],
+                u['score'],
+                u['tags'],
+                u['reasons'],
+                u['sub_score'],
+                u['sub_feasibility'],
+                u['sub_flags'],
+            )
+            for u in updates
+        ])
         raw_conn.commit()
         cur.close()
 

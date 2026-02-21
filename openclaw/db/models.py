@@ -96,6 +96,9 @@ class Candidate(Base):
     flagged_for_review = Column(Boolean, default=False)
     tags = Column(ARRAY(String), default=list)
     reason_codes = Column(ARRAY(String), default=list)
+    subdivisibility_score = Column(Integer, default=0)
+    subdivision_feasibility = Column(String(20), default="UNKNOWN")
+    subdivision_flags = Column(ARRAY(String), default=list)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     parcel = relationship("Parcel", back_populates="candidates")
