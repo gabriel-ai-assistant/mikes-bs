@@ -143,7 +143,7 @@ def evaluate_candidate(candidate: dict, rules: list[dict]) -> tuple[str, int, bo
     # Compute EDGE/RISK tags
     from openclaw.analysis.tagger import compute_tags
     from openclaw.analysis.edge_config import edge_config as _edge_cfg
-    tags, tag_reasons = compute_tags(candidate, config=_edge_cfg)
+    tags, tag_reasons = compute_tags(candidate, config=_edge_cfg, uga_outside=candidate.get('uga_outside'))
     candidate['tags'] = tags  # make tags available to rule matching below
 
     # Apply EDGE score boosts
@@ -196,6 +196,7 @@ def rescore_all() -> dict:
                 c.potential_splits,
                 c.has_critical_area_overlap,
                 c.flagged_for_review,
+                c.uga_outside,
                 p.present_use, p.owner_name, p.zone_code,
                 p.lot_sf, p.assessed_value, p.improvement_value, p.total_value,
                 p.address, p.county

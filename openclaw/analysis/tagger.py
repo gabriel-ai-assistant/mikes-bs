@@ -36,6 +36,7 @@ def compute_tags(
     candidate: dict,
     config=None,
     ruta_confirmed: bool = False,
+    uga_outside: bool | None = None,
 ) -> tuple[list[str], list[str]]:
     """
     Compute EDGE/RISK tags for a candidate parcel.
@@ -45,6 +46,7 @@ def compute_tags(
                    improvement_value, total_value, address, owner_name, potential_splits
         config: EdgeConfig instance (defaults to module-level edge_config)
         ruta_confirmed: True only when caller has confirmed parcel is inside RUTA boundary
+        uga_outside: True = confirmed outside UGA; False = inside UGA; None = unknown (default)
 
     Returns:
         (tags, reason_codes) — both are lists of strings
@@ -94,13 +96,24 @@ def compute_tags(
     # --- EDGE TAGS ---
 
     # A. EDGE_SNOCO_LSA_R5_RD_FR
-    if is_snohomish and is_rural_zone and lot_sf >= lsa_min_sf and not lsa_suppressed:
+    # uga_outside=False → inside UGA: suppress LSA entirely, emit risk instead
+    if uga_outside is False and is_snohomish and is_rural_zone:
+        tags.append("RISK_INSIDE_UGA")
+    elif is_snohomish and is_rural_zone and lot_sf >= lsa_min_sf and not lsa_suppressed:
         tags.append("EDGE_SNOCO_LSA_R5_RD_FR")
-        tags.append("EDGE_UGA_STATUS_UNKNOWN")  # No UGA data available
-        reasons.append(
-            f"EDGE_SNOCO_LSA_R5_RD_FR triggered: zone={zone}, acres={lot_acres:.1f}, "
-            f"UGA=unknown (no boundary data)"
-        )
+        if uga_outside is True:
+            # Confirmed outside UGA — no unknown flag; record confirmation in reason
+            reasons.append(
+                f"EDGE_SNOCO_LSA_R5_RD_FR triggered: zone={zone}, acres={lot_acres:.1f}, "
+                f"UGA=outside(confirmed)"
+            )
+        else:
+            # uga_outside is None — unknown, emit informational tag
+            tags.append("EDGE_UGA_STATUS_UNKNOWN")
+            reasons.append(
+                f"EDGE_SNOCO_LSA_R5_RD_FR triggered: zone={zone}, acres={lot_acres:.1f}, "
+                f"UGA=unknown (no boundary data)"
+            )
 
     # B. EDGE_SNOCO_RURAL_CLUSTER_BONUS
     if is_snohomish and is_rural_zone and lot_sf >= rural_cluster_min_sf:
