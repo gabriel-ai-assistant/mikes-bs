@@ -81,6 +81,10 @@ def load(gpkg_path: str, county: str) -> None:
     cols = {r[1]: r[0] for r in cur_src.fetchall()}
     logger.info(f"Columns ({len(cols)}): {list(cols.keys())}")
 
+    # Detect geometry column name (SHAPE or geom depending on source)
+    geom_col = "SHAPE" if "SHAPE" in cols else "geom"
+    logger.info(f"Geometry column: {geom_col}")
+
     # Total active count
     cur_src.execute("SELECT count(*) FROM Parcels WHERE STATUS='A'")
     total = cur_src.fetchone()[0]
@@ -131,7 +135,7 @@ def load(gpkg_path: str, county: str) -> None:
 
     for row in cur_src:
         try:
-            geom_raw = get_col(row, "geom")
+            geom_raw = get_col(row, geom_col)
             if geom_raw is None or not isinstance(geom_raw, bytes) or len(geom_raw) < 9:
                 errors += 1
                 continue
