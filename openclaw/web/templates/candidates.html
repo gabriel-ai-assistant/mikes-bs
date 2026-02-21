@@ -142,8 +142,8 @@
           </td>
           <td>
             <div class="d-flex gap-1">
-              <button class="btn btn-sm btn-outline-primary"
-                      onclick="showDetail('{{ c.id }}')" title="View Details">Details</button>
+              <button class="btn btn-sm btn-outline-primary py-0"
+                      onclick="openCandidateModal('{{ c.id }}', '{{ p.id }}')" title="Details">Details</button>
             </div>
           </td>
         </tr>
@@ -342,7 +342,7 @@ async function submitFeedback(id, rating, category='', notes='') {
   await fetch(`${BASE}/api/candidate/${id}/feedback?${params}`, {method:'POST'});
 }
 
-async function showDetail(id) {
+async function openCandidateModal(id, parcelId='') {
   if (_miniMap) { _miniMap.remove(); _miniMap = null; }
   document.getElementById('modalTitle').textContent = 'Loading…';
   document.getElementById('modalBody').innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
@@ -378,7 +378,7 @@ async function showDetail(id) {
   const upActive   = fb.thumbs_up > 0 ? 'btn-success' : 'btn-outline-success';
   const downActive = fb.thumbs_down > 0 ? 'btn-danger' : 'btn-outline-danger';
 
-  const detailUrl = `${BASE}/property/${d.parcel_id || ''}`;
+  const detailUrl = `${BASE}/property/${d.parcel_id || parcelId || ''}`;
 
   document.getElementById('modalBody').innerHTML = `
     <div class="row g-3">
