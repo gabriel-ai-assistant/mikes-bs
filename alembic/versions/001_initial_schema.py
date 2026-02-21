@@ -15,9 +15,9 @@ down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-county_enum = sa.Enum("king", "snohomish", "skagit", name="countyenum")
-score_tier_enum = sa.Enum("A", "B", "C", name="scoretierenum")
-lead_status_enum = sa.Enum("new", "reviewed", "outreach", "active", "dead", name="leadstatusenum")
+county_enum = sa.Enum("king", "snohomish", "skagit", name="countyenum", create_type=False)
+score_tier_enum = sa.Enum("A", "B", "C", name="scoretierenum", create_type=False)
+lead_status_enum = sa.Enum("new", "reviewed", "outreach", "active", "dead", name="leadstatusenum", create_type=False)
 
 
 def upgrade() -> None:
