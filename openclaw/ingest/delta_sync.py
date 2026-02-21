@@ -155,7 +155,8 @@ def upsert_snohomish_parcels(session, features: list[dict]) -> int:
                     )
                     geom_sql = f"ST_GeomFromText('MULTIPOLYGON(({ring_str}))', 4326)"
             elif "x" in geom:
-                geom_sql = f"ST_GeomFromText('POINT({geom[\"x\"]} {geom[\"y\"]})', 4326)"
+                gx, gy = geom["x"], geom["y"]
+                geom_sql = f"ST_GeomFromText('POINT({gx} {gy})', 4326)"
 
         try:
             if geom_sql:
