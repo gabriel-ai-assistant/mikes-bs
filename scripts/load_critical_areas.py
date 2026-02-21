@@ -36,8 +36,11 @@ def load_wetlands(gpkg_path, county, conn_dst):
     cur_src = conn_src.cursor()
 
     cur_src.execute("SELECT table_name FROM gpkg_contents WHERE data_type='features'")
-    layer = cur_src.fetchone()[0]
-    logger.info(f"Wetlands layer: {layer}")
+    all_layers = [r[0] for r in cur_src.fetchall()]
+    # Prefer WA_Wetlands over metadata/info layers
+    preferred = [l for l in all_layers if l == 'WA_Wetlands']
+    layer = preferred[0] if preferred else all_layers[0]
+    logger.info(f"Wetlands layer: {layer} (available: {all_layers})")
 
     cur_src.execute(f"SELECT srs_id FROM gpkg_geometry_columns WHERE table_name='{layer}'")
     srid = int(cur_src.fetchone()[0])
