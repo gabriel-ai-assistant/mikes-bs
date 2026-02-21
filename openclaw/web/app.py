@@ -354,6 +354,106 @@ def map_points(
     ]
 
 
+# ── Settings ───────────────────────────────────────────────────────────────
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request):
+    return templates.TemplateResponse("settings.html", {"request": request})
+
+
+# ── Scoring Rules API ─────────────────────────────────────────────────────
+
+@app.get("/api/rules")
+def get_rules(session: Session = Depends(db)):
+    from sqlalchemy import text as sqlt
+    rows = session.execute(sqlt("""
+        SELECT id, name, field, operator, value, action, tier, score_adj, priority, active
+        FROM scoring_rules ORDER BY priority ASC, created_at ASC
+    """)).mappings().all()
+    return [dict(r) for r in rows]
+
+@app.post("/api/rules")
+async def create_rule(request: Request, session: Session = Depends(db)):
+    from sqlalchemy import text as sqlt
+    data = await request.json()
+    session.execute(sqlt("""
+        INSERT INTO scoring_rules (name, field, operator, value, action, tier, score_adj, priority)
+        VALUES (:name, :field, :operator, :value, :action, :tier, :score_adj, :priority)
+    """), {
+        'name': data['name'], 'field': data['field'],
+        'operator': data['operator'], 'value': data['value'],
+        'action': data['action'],
+        'tier': data.get('tier') or None,
+        'score_adj': int(data.get('score_adj') or 0),
+        'priority': int(data.get('priority') or 100),
+    })
+    session.commit()
+    return {"ok": True}
+
+@app.put("/api/rules/{rule_id}")
+async def update_rule(rule_id: str, request: Request, session: Session = Depends(db)):
+    from sqlalchemy import text as sqlt
+    data = await request.json()
+    session.execute(sqlt("""
+        UPDATE scoring_rules SET
+            name=:name, field=:field, operator=:operator, value=:value,
+            action=:action, tier=:tier, score_adj=:score_adj,
+            priority=:priority, active=:active
+        WHERE id=:id
+    """), {**data, 'id': rule_id,
+          'tier': data.get('tier') or None,
+          'score_adj': int(data.get('score_adj') or 0),
+          'active': data.get('active', True)})
+    session.commit()
+    return {"ok": True}
+
+@app.delete("/api/rules/{rule_id}")
+def delete_rule(rule_id: str, session: Session = Depends(db)):
+    from sqlalchemy import text as sqlt
+    session.execute(sqlt("DELETE FROM scoring_rules WHERE id=:id"), {'id': rule_id})
+    session.commit()
+    return {"ok": True}
+
+@app.patch("/api/rules/{rule_id}/toggle")
+def toggle_rule(rule_id: str, session: Session = Depends(db)):
+    from sqlalchemy import text as sqlt
+    session.execute(sqlt("""
+        UPDATE scoring_rules SET active = NOT active WHERE id=:id
+    """), {'id': rule_id})
+    session.commit()
+    return {"ok": True}
+
+@app.post("/api/rescore")
+def rescore(session: Session = Depends(db)):
+    """Re-score all candidates with current rule set."""
+    from openclaw.analysis.rule_engine import rescore_all
+    result = rescore_all()
+    return result
+
+@app.get("/api/rescore/preview")
+def rescore_preview(session: Session = Depends(db)):
+    """Preview what re-scoring would produce without committing."""
+    from openclaw.analysis.rule_engine import load_rules, evaluate_candidate
+    from sqlalchemy import text as sqlt
+    rules = load_rules(session)
+    rows = session.execute(sqlt("""
+        SELECT c.id, c.potential_splits, c.has_critical_area_overlap, c.flagged_for_review,
+               p.present_use, p.owner_name, p.zone_code, p.lot_sf, p.assessed_value,
+               p.improvement_value, p.total_value
+        FROM candidates c JOIN parcels p ON c.parcel_id = p.id
+    """)).mappings().all()
+
+    preview = {t: 0 for t in 'ABCDEF'}
+    excluded = 0
+    for row in rows:
+        tier, score, excl = evaluate_candidate(dict(row), rules)
+        if excl:
+            excluded += 1
+        else:
+            preview[tier] = preview.get(tier, 0) + 1
+    return {'preview': preview, 'excluded': excluded, 'rules_active': len(rules)}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("openclaw.web.app:app", host="0.0.0.0", port=8470, reload=True)
