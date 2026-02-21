@@ -19,6 +19,7 @@ import sys
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 from openclaw.analysis.scorer import run_scoring
+from openclaw.discovery.engine import run_discovery
 from openclaw.ingest.delta_sync import run_delta_sync
 from openclaw.notify.digest import send_digest
 
@@ -79,7 +80,12 @@ def main():
     parser = argparse.ArgumentParser(description="Mike's Building System")
     parser.add_argument("--run-now", action="store_true", help="Run full pipeline immediately")
     parser.add_argument("--score-only", action="store_true", help="Skip delta sync, run scoring only")
+    parser.add_argument("--discover", action="store_true", help="Run weekly discovery now")
     args = parser.parse_args()
+
+    if args.discover:
+        run_discovery()
+        return
 
     if args.run_now or args.score_only:
         run_pipeline(score_only=args.score_only)
@@ -89,6 +95,7 @@ def main():
     logger.info("Starting scheduler — pipeline runs daily at 06:00 UTC")
     scheduler = BlockingScheduler()
     scheduler.add_job(run_pipeline, "cron", hour=6, minute=0, kwargs={"score_only": False})
+    scheduler.add_job(run_discovery, 'cron', day_of_week='sun', hour=6, minute=30, kwargs={'county': None, 'assumptions_version': 'v1'})
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):

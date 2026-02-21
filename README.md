@@ -57,3 +57,39 @@ EDGE_UNIT_LOT_ZONES=RS-6,RS-8,RM-12
 ```
 
 These tags will not fire until zones are explicitly configured (fail-closed by default).
+
+## Alpha Engine
+
+### EDGE Tags — Snohomish County Zoning Arbitrage
+
+| Tag | Trigger | Score Boost |
+|-----|---------|-------------|
+| `EDGE_SNOCO_LSA_R5_RD_FR` | zone ∈ {R-5,RD,F&R}, ≥10ac, outside UGA, no access block | +35 |
+| `EDGE_SNOCO_RURAL_CLUSTER_BONUS` | zone ∈ {R-5,RD,F&R}, ≥5ac | +15 |
+| `EDGE_SNOCO_RUTA_ARBITRAGE` | inside RUTA boundary (data required) | +30 |
+| `EDGE_WA_HB1110_MIDDLE_HOUSING` | zone in `EDGE_HB1110_URBAN_ZONES` env | +25 |
+| `EDGE_WA_UNIT_LOT_SUBDIVISION` | zone in `EDGE_UNIT_LOT_ZONES` env | +20 |
+
+### Fail-Closed Behavior
+- UGA data unavailable → `EDGE_UGA_STATUS_UNKNOWN`, LSA tag withheld
+- RUTA table empty → `RISK_RUTA_DATA_UNAVAILABLE`
+- HB1110 zones not configured → `RISK_HB1110_DATA_UNAVAILABLE`
+- No legal access signals → `RISK_ACCESS_UNKNOWN`, LSA suppressed
+
+### DIF Scoring Knobs
+All weights and thresholds configurable via `.env`. Key vars: `DIF_WEIGHT_YMS`, `DIF_WEIGHT_ALS`, `DIF_WEIGHT_CMS`, `DIF_WEIGHT_SFI`, `DIF_WEIGHT_EFI`, `DIF_MAX_DELTA`, `TIER_THRESHOLDS`.
+
+### Discovery Engine
+```bash
+python -m openclaw.discovery.engine --county snohomish --top-a 20 --top-b 50
+python -m openclaw.discovery.engine --json-out /tmp/discovery.json
+```
+
+### Underwriting Engine
+```bash
+python -m openclaw.underwriting.engine --tier A --top 20
+python -m openclaw.underwriting.engine --parcel-id <uuid>
+```
+
+### Tier Calibration
+See `docs/tier_calibration.md` for expected score distribution and recalibration process.
