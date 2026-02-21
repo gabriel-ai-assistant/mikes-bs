@@ -1,41 +1,130 @@
 {% extends "base.html" %}
-{% set active = "dashboard" %}
-{% block title %}Dashboard — Mike's Building System{% endblock %}
+{% block title %}Dashboard — Mike's BS{% endblock %}
 {% block content %}
 <div class="row g-3 mb-4">
-  <div class="col-6 col-md-3"><div class="stat-card"><p>Total Parcels</p><h2>{{ "{:,}".format(total_parcels) }}</h2></div></div>
-  <div class="col-6 col-md-3"><div class="stat-card"><p>Candidates</p><h2>{{ "{:,}".format(total_candidates) }}</h2></div></div>
-  <div class="col-6 col-md-3"><div class="stat-card"><p>Tier A</p><h2 class="text-success">{{ "{:,}".format(tier_a) }}</h2></div></div>
-  <div class="col-6 col-md-3"><div class="stat-card"><p>New Leads This Week</p><h2 style="color:#2563EB">{{ "{:,}".format(new_leads_week) }}</h2></div></div>
+  <div class="col-6 col-md-3">
+    <div class="card text-center border-0 shadow-sm h-100">
+      <div class="card-body">
+        <div class="display-6 fw-bold text-primary">{{ "{:,}".format(total_parcels) }}</div>
+        <div class="text-muted small">Parcels Loaded</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card text-center border-0 shadow-sm h-100">
+      <div class="card-body">
+        <div class="display-6 fw-bold text-success">{{ "{:,}".format(total_candidates) }}</div>
+        <div class="text-muted small">Subdivision Candidates</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card text-center border-0 shadow-sm h-100">
+      <div class="card-body">
+        <div class="display-6 fw-bold text-warning">{{ "{:,}".format(tier_a) }}</div>
+        <div class="text-muted small">Tier A (Hot Deals)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card text-center border-0 shadow-sm h-100">
+      <div class="card-body">
+        <div class="display-6 fw-bold text-info">{{ "{:,}".format(tier_b) }}</div>
+        <div class="text-muted small">Tier B (Good Deals)</div>
+      </div>
+    </div>
+  </div>
 </div>
 
-{% if total_candidates == 0 %}
-<div class="empty-state">
-  <i class="bi bi-bar-chart-line"></i>
-  <h4>No data yet</h4>
-  <p>Run the pipeline to populate candidates and see charts here.</p>
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body">
+        <h6 class="card-title fw-bold">Candidates by Tier</h6>
+        <canvas id="tierChart" height="180"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body">
+        <h6 class="card-title fw-bold">🔥 Top Tier A Deals</h6>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Address</th>
+                <th>Owner</th>
+                <th>Lot Size</th>
+                <th>Splits</th>
+                <th>Land Value</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for c in top5 %}
+              <tr>
+                <td class="fw-semibold">{{ c.parcel.address or "—" }}</td>
+                <td class="text-muted small">{{ c.parcel.owner_name or "—" }}</td>
+                <td class="small">{{ c.parcel.lot_sf | acres }}</td>
+                <td><span class="badge bg-success">{{ c.potential_splits }}</span></td>
+                <td class="small">{{ c.estimated_land_value | money }}</td>
+                <td><a href="{{ base_url }}/candidates" class="btn btn-sm btn-outline-primary py-0">View</a></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
-{% else %}
+
 <div class="row g-3">
-  <div class="col-md-5">
-    <div class="stat-card"><h5>Candidates by Tier</h5><canvas id="tierChart" height="260"></canvas></div>
+  <div class="col-md-4">
+    <a href="{{ base_url }}/candidates?tier=A" class="card text-decoration-none border-success border-2 h-100">
+      <div class="card-body text-center py-4">
+        <div class="fs-1">🏆</div>
+        <div class="fs-4 fw-bold text-success">{{ "{:,}".format(tier_a) }} Tier A</div>
+        <div class="text-muted">Best subdivision deals<br>4+ potential splits</div>
+      </div>
+    </a>
   </div>
-  <div class="col-md-7">
-    <div class="stat-card"><h5>Candidates by County</h5><canvas id="countyChart" height="260"></canvas></div>
+  <div class="col-md-4">
+    <a href="{{ base_url }}/candidates?tier=B" class="card text-decoration-none border-warning border-2 h-100">
+      <div class="card-body text-center py-4">
+        <div class="fs-1">✅</div>
+        <div class="fs-4 fw-bold text-warning">{{ "{:,}".format(tier_b) }} Tier B</div>
+        <div class="text-muted">Good subdivision deals<br>2–3 potential splits</div>
+      </div>
+    </a>
+  </div>
+  <div class="col-md-4">
+    <a href="{{ base_url }}/map" class="card text-decoration-none border-primary border-2 h-100">
+      <div class="card-body text-center py-4">
+        <div class="fs-1">🗺️</div>
+        <div class="fs-4 fw-bold text-primary">View Map</div>
+        <div class="text-muted">See all candidates<br>plotted on the map</div>
+      </div>
+    </a>
   </div>
 </div>
-{% endif %}
 {% endblock %}
 
 {% block scripts %}
-{% if total_candidates > 0 %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script>
-const tierData = {{ tier_data_json|safe }};
-const counties = {{ counties_json|safe }};
-const countyData = {{ county_data_json|safe }};
-new Chart(document.getElementById('tierChart'),{type:'doughnut',data:{labels:['Tier A','Tier B','Tier C'],datasets:[{data:tierData,backgroundColor:['#16a34a','#eab308','#9ca3af']}]},options:{plugins:{legend:{position:'bottom'}}}});
-new Chart(document.getElementById('countyChart'),{type:'bar',data:{labels:counties,datasets:[{label:'Candidates',data:countyData,backgroundColor:'#2563EB'}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{precision:0}}}}});
+new Chart(document.getElementById('tierChart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Tier A', 'Tier B', 'Tier C'],
+    datasets: [{
+      data: {{ tier_data_json }},
+      backgroundColor: ['#198754','#ffc107','#6c757d'],
+      borderWidth: 2,
+    }]
+  },
+  options: { plugins: { legend: { position: 'bottom' } } }
+});
 </script>
-{% endif %}
 {% endblock %}

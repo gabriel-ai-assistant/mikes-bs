@@ -1,101 +1,191 @@
 {% extends "base.html" %}
-{% set active = "candidates" %}
-{% block title %}Candidates — Mike's Building System{% endblock %}
+{% block title %}Candidates — Mike's BS{% endblock %}
 {% block content %}
-<div class="row mb-3 g-2 align-items-end">
-  <div class="col-md-4">
-    <form method="get" class="input-group">
-      <input type="text" name="q" class="form-control" placeholder="Search address…" value="{{ search }}">
-      <input type="hidden" name="tier" value="{{ tier }}">
-      <input type="hidden" name="county" value="{{ county }}">
-      <input type="hidden" name="sort" value="{{ sort }}">
-      <button class="btn btn-primary">Search</button>
+
+<!-- Filters -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-12 col-md-4">
+        <input type="text" name="q" class="form-control" placeholder="Search address or owner name…" value="{{ search }}">
+      </div>
+      <div class="col-6 col-md-2">
+        <select name="tier" class="form-select">
+          <option value="">All Tiers</option>
+          <option value="A" {% if tier=='A' %}selected{% endif %}>🏆 Tier A</option>
+          <option value="B" {% if tier=='B' %}selected{% endif %}>✅ Tier B</option>
+          <option value="C" {% if tier=='C' %}selected{% endif %}>⬜ Tier C</option>
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <select name="sort" class="form-select">
+          <option value="splits" {% if sort=='splits' %}selected{% endif %}>Most Splits</option>
+          <option value="lot" {% if sort=='lot' %}selected{% endif %}>Largest Lot</option>
+          <option value="value" {% if sort=='value' %}selected{% endif %}>Highest Value</option>
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <div class="form-check form-switch pt-2">
+          <input class="form-check-input" type="checkbox" name="ag" value="1" id="agCheck" {% if ag=='1' %}checked{% endif %}>
+          <label class="form-check-label small" for="agCheck">Ag Zone Only</label>
+        </div>
+      </div>
+      <div class="col-6 col-md-2">
+        <button type="submit" class="btn btn-primary w-100">Filter</button>
+      </div>
     </form>
   </div>
-  <div class="col-auto">
-    <select class="form-select" onchange="location.href='?q={{ search }}&tier='+this.value+'&county={{ county }}&sort={{ sort }}'">
-      <option value="">All Tiers</option>
-      {% for t in ['A','B','C'] %}<option value="{{ t }}"{% if tier==t %} selected{% endif %}>Tier {{ t }}</option>{% endfor %}
-    </select>
-  </div>
-  <div class="col-auto">
-    <select class="form-select" onchange="location.href='?q={{ search }}&tier={{ tier }}&county='+this.value+'&sort={{ sort }}'">
-      <option value="">All Counties</option>
-      {% for c in ['king','snohomish','skagit'] %}<option value="{{ c }}"{% if county==c %} selected{% endif %}>{{ c|title }}</option>{% endfor %}
-    </select>
-  </div>
-  <div class="col-auto">
-    <select class="form-select" onchange="location.href='?q={{ search }}&tier={{ tier }}&county={{ county }}&sort='+this.value">
-      {% for k,l in [('profit','Profit ↓'),('margin','Margin ↓'),('lot','Lot Size ↓'),('splits','Splits ↓')] %}
-      <option value="{{ k }}"{% if sort==k %} selected{% endif %}>{{ l }}</option>{% endfor %}
-    </select>
-  </div>
 </div>
 
-{% if candidates|length == 0 %}
-<div class="empty-state"><i class="bi bi-search"></i><h4>No candidates found</h4><p>Adjust filters or run the pipeline to generate candidates.</p></div>
-{% else %}
-<div class="table-responsive">
-<table class="table table-hover bg-white" style="border-radius:12px;overflow:hidden">
-<thead class="table-light">
-<tr><th>Tier</th><th>County</th><th>Address</th><th>Lot SF</th><th>Splits</th><th>Est. Profit</th><th>Margin</th></tr>
-</thead>
-<tbody>
-{% for c in candidates %}
-<tr role="button" onclick="showDetail('{{ c.id }}')" style="cursor:pointer">
-  <td><span class="badge badge-{{ c.score_tier.value|lower if c.score_tier else 'c' }}">{{ c.score_tier.value if c.score_tier else '—' }}</span></td>
-  <td>{{ c.parcel.county.value|title if c.parcel.county else '—' }}</td>
-  <td>{{ c.parcel.address or '—' }}</td>
-  <td>{{ "{:,}".format(c.parcel.lot_sf) if c.parcel.lot_sf else '—' }}</td>
-  <td>{{ c.potential_splits or '—' }}</td>
-  <td>{{ c.estimated_profit|money }}</td>
-  <td>{{ c.estimated_margin_pct|pct }}</td>
-</tr>
-{% endfor %}
-</tbody>
-</table>
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <span class="text-muted small">Showing {{ candidates|length }} results</span>
+  <a href="{{ base_url }}/map" class="btn btn-sm btn-outline-secondary">🗺️ View on Map</a>
 </div>
-{% endif %}
+
+<!-- Table -->
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0" id="candidateTable">
+      <thead class="table-dark">
+        <tr>
+          <th>Tier</th>
+          <th>Address</th>
+          <th>Owner</th>
+          <th>Owner Mailing</th>
+          <th>Lot Size</th>
+          <th>Zone</th>
+          <th>Splits</th>
+          <th>Land Value</th>
+          <th>Flags</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in candidates %}
+        {% set p = c.parcel %}
+        <tr>
+          <td>
+            {% if c.score_tier and c.score_tier.value == 'A' %}
+              <span class="badge bg-success fs-6">A</span>
+            {% elif c.score_tier and c.score_tier.value == 'B' %}
+              <span class="badge bg-warning text-dark fs-6">B</span>
+            {% else %}
+              <span class="badge bg-secondary fs-6">C</span>
+            {% endif %}
+          </td>
+          <td class="fw-semibold">{{ p.address or "—" }}</td>
+          <td>{{ p.owner_name or "—" }}</td>
+          <td class="text-muted small">{{ p.owner_address or "—" }}</td>
+          <td class="small text-nowrap">
+            {{ p.lot_sf | sqft }}<br>
+            <span class="text-muted">{{ p.lot_sf | acres }}</span>
+          </td>
+          <td class="small">
+            <span class="badge bg-light text-dark border">{{ p.zone_code or "—" }}</span>
+            {% if p.zone_code and zone_labels.get(p.zone_code) %}
+            <div class="text-muted" style="font-size:0.7rem">{{ zone_labels[p.zone_code] | truncate(30) }}</div>
+            {% endif %}
+          </td>
+          <td class="text-center fw-bold fs-5">{{ c.potential_splits or "—" }}</td>
+          <td class="small">{{ c.estimated_land_value | money }}</td>
+          <td class="small">
+            {% if c.has_critical_area_overlap %}<span class="badge bg-danger" title="Wetland overlap">🌿 Wetland</span>{% endif %}
+            {% if c.flagged_for_review %}<span class="badge bg-warning text-dark" title="Ag notification zone">🚜 Ag Zone</span>{% endif %}
+          </td>
+          <td>
+            <button class="btn btn-sm btn-outline-primary"
+                    onclick="showDetail('{{ c.id }}')" title="View Details">
+              Details
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not candidates %}
+        <tr><td colspan="10" class="text-center text-muted py-4">No candidates match your filters.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
 
 <!-- Detail Modal -->
-<div class="modal fade" id="detailModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
-<div class="modal-header"><h5 class="modal-title">Candidate Details</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-<div class="modal-body" id="detailBody"><div class="text-center p-4"><div class="spinner-border text-primary"></div></div></div>
-</div></div></div>
+<div class="modal fade" id="detailModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalTitle">Candidate Detail</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="modalBody">
+        <div class="text-center py-4"><div class="spinner-border text-primary"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
+const BASE = "{{ base_url }}";
 const modal = new bootstrap.Modal(document.getElementById('detailModal'));
-function showDetail(id){
-  document.getElementById('detailBody').innerHTML='<div class="text-center p-4"><div class="spinner-border text-primary"></div></div>';
+
+function fmt(v, prefix='$') {
+  if (v == null) return '—';
+  if (typeof v === 'number') return prefix + v.toLocaleString();
+  return v;
+}
+
+async function showDetail(id) {
+  document.getElementById('modalTitle').textContent = 'Loading…';
+  document.getElementById('modalBody').innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
   modal.show();
-  fetch(BASE+'/api/candidate/'+id).then(r=>r.json()).then(d=>{
-    if(d.error){document.getElementById('detailBody').innerHTML='<p class="text-danger">Not found</p>';return;}
-    const m=v=>v!=null?'$'+v.toLocaleString():'—';
-    const p=v=>v!=null?v.toFixed(1)+'%':'—';
-    document.getElementById('detailBody').innerHTML=`
-      <div class="row g-3">
-        <div class="col-md-6"><strong>Address:</strong> ${d.address||'—'}</div>
-        <div class="col-md-3"><strong>County:</strong> ${d.county||'—'}</div>
-        <div class="col-md-3"><strong>Tier:</strong> <span class="badge badge-${(d.tier||'c').toLowerCase()}">${d.tier||'—'}</span></div>
-        <div class="col-md-4"><strong>Owner:</strong> ${d.owner_name||'—'}</div>
-        <div class="col-md-4"><strong>Zone:</strong> ${d.zone_code||'—'}</div>
-        <div class="col-md-4"><strong>Lot SF:</strong> ${d.lot_sf?d.lot_sf.toLocaleString():'—'}</div>
-        <div class="col-12"><hr></div>
-        <div class="col-md-4"><strong>Assessed Value:</strong> ${m(d.assessed_value)}</div>
-        <div class="col-md-4"><strong>Land Value:</strong> ${m(d.land_value)}</div>
-        <div class="col-md-4"><strong>Splits:</strong> ${d.splits||'—'}</div>
-        <div class="col-md-4"><strong>Dev Cost:</strong> ${m(d.dev_cost)}</div>
-        <div class="col-md-4"><strong>Build Cost:</strong> ${m(d.build_cost)}</div>
-        <div class="col-md-4"><strong>ARV:</strong> ${m(d.arv)}</div>
-        <div class="col-md-6"><strong>Estimated Profit:</strong> <span class="fs-4 fw-bold text-success">${m(d.profit)}</span></div>
-        <div class="col-md-6"><strong>Margin:</strong> <span class="fs-4 fw-bold">${p(d.margin_pct)}</span></div>
-        <div class="col-12"><hr></div>
-        <div class="col-md-6"><strong>Critical Area Overlap:</strong> ${d.critical_area?'⚠️ Yes':'✅ No'}</div>
-        <div class="col-md-6"><strong>Shoreline Overlap:</strong> ${d.shoreline?'⚠️ Yes':'✅ No'}</div>
-      </div>`;
-  });
+  const d = await fetch(`${BASE}/api/candidate/${id}`).then(r => r.json());
+  document.getElementById('modalTitle').innerHTML =
+    `<span class="badge ${d.tier==='A'?'bg-success':d.tier==='B'?'bg-warning text-dark':'bg-secondary'} me-2">Tier ${d.tier}</span>${d.address || 'No address'}`;
+
+  document.getElementById('modalBody').innerHTML = `
+    <div class="row g-3">
+      <div class="col-md-6">
+        <h6 class="fw-bold text-muted text-uppercase small mb-1">📍 Property</h6>
+        <table class="table table-sm table-borderless mb-0">
+          <tr><td class="text-muted">Address</td><td class="fw-semibold">${d.address || '—'}</td></tr>
+          <tr><td class="text-muted">County</td><td>${d.county || '—'}</td></tr>
+          <tr><td class="text-muted">Lot Size</td><td>${d.lot_sf ? d.lot_sf.toLocaleString() + ' sf (' + d.lot_acres + ' ac)' : '—'}</td></tr>
+          <tr><td class="text-muted">Zone</td><td><strong>${d.zone_code || '—'}</strong>${d.zone_label ? '<br><span class="text-muted small">'+d.zone_label+'</span>' : ''}</td></tr>
+          <tr><td class="text-muted">Use Code</td><td>${d.present_use || '—'}</td></tr>
+        </table>
+      </div>
+      <div class="col-md-6">
+        <h6 class="fw-bold text-muted text-uppercase small mb-1">👤 Owner</h6>
+        <table class="table table-sm table-borderless mb-0">
+          <tr><td class="text-muted">Name</td><td class="fw-semibold">${d.owner_name || '—'}</td></tr>
+          <tr><td class="text-muted">Mailing</td><td>${d.owner_address || '—'}</td></tr>
+        </table>
+        <h6 class="fw-bold text-muted text-uppercase small mb-1 mt-3">💰 Value</h6>
+        <table class="table table-sm table-borderless mb-0">
+          <tr><td class="text-muted">Land Value</td><td>${fmt(d.assessed_value)}</td></tr>
+          <tr><td class="text-muted">Improvements</td><td>${fmt(d.improvement_value)}</td></tr>
+          <tr><td class="text-muted">Total Assessed</td><td class="fw-semibold">${fmt(d.total_value)}</td></tr>
+        </table>
+      </div>
+      <div class="col-12">
+        <h6 class="fw-bold text-muted text-uppercase small mb-1">🏗️ Subdivision Potential</h6>
+        <div class="row g-2">
+          <div class="col-4 text-center p-2 bg-light rounded">
+            <div class="fs-3 fw-bold text-success">${d.splits}</div>
+            <div class="small text-muted">Potential Splits</div>
+          </div>
+          <div class="col-8">
+            ${d.wetland_flag ? '<span class="badge bg-danger me-1">🌿 Wetland Overlap</span>' : ''}
+            ${d.ag_flag ? '<span class="badge bg-warning text-dark me-1">🚜 Ag Zone</span>' : ''}
+            ${d.shoreline_flag ? '<span class="badge bg-info me-1">🌊 Shoreline</span>' : ''}
+            ${!d.wetland_flag && !d.ag_flag && !d.shoreline_flag ? '<span class="text-success small">✅ No critical area flags</span>' : ''}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
 }
 </script>
 {% endblock %}

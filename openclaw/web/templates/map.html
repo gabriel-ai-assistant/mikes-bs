@@ -1,41 +1,133 @@
 {% extends "base.html" %}
-{% set active = "map" %}
-{% block title %}Map — Mike's Building System{% endblock %}
-{% block head %}
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<style>#map{height:calc(100vh - 80px);border-radius:12px}</style>
-{% endblock %}
+{% block title %}Map — Mike's BS{% endblock %}
+
 {% block content %}
-<div id="map"></div>
+<!-- Map filter bar -->
+<div class="card border-0 shadow-sm mb-2">
+  <div class="card-body py-2">
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+      <span class="fw-semibold text-muted small">Filter:</span>
+      <button class="btn btn-sm btn-success active" onclick="filterTier('')" id="btn-all">All</button>
+      <button class="btn btn-sm btn-outline-success" onclick="filterTier('A')" id="btn-A">🏆 Tier A</button>
+      <button class="btn btn-sm btn-outline-warning" onclick="filterTier('B')" id="btn-B">✅ Tier B</button>
+      <div class="vr"></div>
+      <span class="small text-muted" id="countLabel">Loading…</span>
+    </div>
+  </div>
+</div>
+
+<div id="map" style="height: calc(100vh - 220px); border-radius: 0.5rem; overflow: hidden;"></div>
+
+<!-- Legend -->
+<div class="card border-0 shadow-sm mt-2">
+  <div class="card-body py-2">
+    <div class="d-flex gap-3 flex-wrap align-items-center">
+      <span class="fw-semibold text-muted small">Legend:</span>
+      <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#198754;"></span> Tier A — 4+ splits</span>
+      <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#ffc107;"></span> Tier B — 2-3 splits</span>
+      <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#dc3545;border:2px solid #9b1c1c;"></span> Wetland flagged</span>
+      <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#0d6efd;"></span> Raw parcel</span>
+    </div>
+  </div>
+</div>
 {% endblock %}
+
 {% block scripts %}
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9/dist/leaflet.js"></script>
 <script>
-const map=L.map('map').setView([47.6,-122.3],9);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
+const BASE = "{{ base_url }}";
 
-const colors={A:'#16a34a',B:'#eab308',C:'#9ca3af',parcel:'#2563EB'};
-const m=v=>v!=null?'$'+v.toLocaleString():'—';
-const sf=v=>v!=null?v.toLocaleString()+' sf':'—';
+const map = L.map('map').setView([47.9, -122.1], 10);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors'
+}).addTo(map);
 
-fetch(BASE+'/api/map/points').then(r=>r.json()).then(pts=>{
-  if(!pts.length){
-    document.getElementById('map').innerHTML='<div class="empty-state" style="padding-top:30vh"><i class="bi bi-geo-alt" style="font-size:3rem"></i><h4>No map data yet</h4><p>No parcels loaded yet.</p></div>';
-    return;
-  }
-  const bounds=[];
-  const isParcelView=pts[0]&&pts[0].tier==='parcel';
-  pts.forEach(p=>{
-    const c=colors[p.tier]||'#9ca3af';
-    const marker=L.circleMarker([p.lat,p.lng],{radius:isParcelView?4:7,fillColor:c,color:'#fff',weight:1,fillOpacity:.7}).addTo(map);
-    if(isParcelView){
-      marker.bindPopup(`<strong>${p.address}</strong><br>${p.county?p.county.charAt(0).toUpperCase()+p.county.slice(1):''}<br>Lot: ${sf(p.lot_sf)}<br>Assessed: ${m(p.profit)}`);
-    } else {
-      marker.bindPopup(`<strong>${p.address}</strong><br>Tier ${p.tier} · ${p.splits||0} splits<br>Profit: ${m(p.profit)}<br><a href="${BASE}/candidates?q=${encodeURIComponent(p.address)}">View Details →</a>`);
-    }
-    bounds.push([p.lat,p.lng]);
+let markers = [];
+let currentTier = '';
+
+function tierColor(tier, wetland) {
+  if (wetland) return '#dc3545';
+  if (tier === 'A') return '#198754';
+  if (tier === 'B') return '#ffc107';
+  if (tier === 'parcel') return '#0d6efd';
+  return '#6c757d';
+}
+
+function fmt(v) {
+  return v ? '$' + Number(v).toLocaleString() : '—';
+}
+function fmtSf(v) {
+  if (!v) return '—';
+  return v.toLocaleString() + ' sf (' + (v/43560).toFixed(2) + ' ac)';
+}
+
+async function loadPoints(tier = '') {
+  document.getElementById('countLabel').textContent = 'Loading…';
+  markers.forEach(m => map.removeLayer(m));
+  markers = [];
+
+  const url = `${BASE}/api/map/points${tier ? '?tier='+tier : ''}`;
+  const pts = await fetch(url).then(r => r.json());
+
+  document.getElementById('countLabel').textContent = `${pts.length.toLocaleString()} candidates shown`;
+
+  pts.forEach(pt => {
+    const color = tierColor(pt.tier, pt.wetland);
+    const radius = pt.tier === 'A' ? 7 : pt.tier === 'B' ? 5 : 4;
+
+    const marker = L.circleMarker([pt.lat, pt.lng], {
+      radius,
+      fillColor: color,
+      color: pt.ag ? '#9b1c1c' : '#fff',
+      weight: pt.ag ? 2 : 1,
+      opacity: 0.9,
+      fillOpacity: 0.85,
+    });
+
+    const flags = [
+      pt.wetland ? '🌿 Wetland overlap' : null,
+      pt.ag ? '🚜 Agricultural zone' : null,
+    ].filter(Boolean);
+
+    marker.bindPopup(`
+      <div style="min-width:200px">
+        <div style="font-weight:700;font-size:1rem;margin-bottom:4px">${pt.address}</div>
+        <div style="color:#555;margin-bottom:6px">${pt.owner || 'Unknown owner'}</div>
+        <table style="width:100%;font-size:0.85rem;border-collapse:collapse">
+          <tr><td style="color:#888">Tier</td><td><strong>Tier ${pt.tier}</strong></td></tr>
+          <tr><td style="color:#888">Splits</td><td><strong style="color:#198754;font-size:1.1rem">${pt.splits ?? '—'}</strong></td></tr>
+          <tr><td style="color:#888">Lot Size</td><td>${fmtSf(pt.lot_sf)}</td></tr>
+          <tr><td style="color:#888">Zone</td><td>${pt.zone || '—'}</td></tr>
+          <tr><td style="color:#888">Land Value</td><td>${fmt(pt.value)}</td></tr>
+        </table>
+        ${flags.length ? '<div style="margin-top:6px">' + flags.map(f=>`<span style="background:#fee2e2;color:#9b1c1c;padding:2px 6px;border-radius:4px;font-size:0.75rem;margin-right:4px">${f}</span>`).join('') + '</div>' : ''}
+        <div style="margin-top:8px">
+          <a href="${BASE}/candidates" style="font-size:0.8rem;color:#0d6efd">View all candidates →</a>
+        </div>
+      </div>
+    `, { maxWidth: 280 });
+
+    marker.addTo(map);
+    markers.push(marker);
   });
-  if(bounds.length)map.fitBounds(bounds,{padding:[30,30]});
-});
+}
+
+function filterTier(tier) {
+  currentTier = tier;
+  ['all','A','B'].forEach(t => {
+    const btn = document.getElementById('btn-' + t);
+    if (btn) btn.className = btn.className.replace(' active','').replace('btn-success','btn-outline-success').replace('btn-warning','btn-outline-warning');
+  });
+  const active = document.getElementById('btn-' + (tier || 'all'));
+  if (active) {
+    active.className = active.className
+      .replace('btn-outline-success','btn-success')
+      .replace('btn-outline-warning','btn-warning') + ' active';
+  }
+  loadPoints(tier);
+}
+
+loadPoints();
 </script>
 {% endblock %}

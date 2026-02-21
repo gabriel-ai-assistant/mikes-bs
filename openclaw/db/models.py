@@ -1,4 +1,4 @@
-"""SQLAlchemy + GeoAlchemy2 models for Mike's Building System."""
+"""SQLAlchemy models for Mike's Building System — aligned with v2 schema."""
 
 import enum
 import uuid
@@ -42,16 +42,20 @@ class Parcel(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     parcel_id = Column(String, nullable=False, index=True)
     county = Column(Enum(CountyEnum), nullable=False)
+    lrsn = Column(String)
+    corrdate = Column(DateTime)
     address = Column(String)
     owner_name = Column(String)
-    owner_mailing_address = Column(String)
-    lot_sf = Column(Integer)
+    owner_address = Column(String)   # full mailing address
+    lot_sf = Column(Float)
     zone_code = Column(String)
     present_use = Column(String)
     assessed_value = Column(Integer)
+    improvement_value = Column(Integer)
+    total_value = Column(Integer)
     last_sale_price = Column(Integer)
     last_sale_date = Column(Date)
-    geometry = Column(Geometry("POLYGON", srid=4326))
+    geometry = Column(Geometry("GEOMETRY", srid=4326))
     ingested_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -62,7 +66,7 @@ class ZoningRule(Base):
     __tablename__ = "zoning_rules"
     __table_args__ = (PrimaryKeyConstraint("county", "zone_code"),)
 
-    county = Column(Enum(CountyEnum), nullable=False)
+    county = Column(String, nullable=False)
     zone_code = Column(String, nullable=False)
     min_lot_sf = Column(Integer)
     min_lot_width_ft = Column(Integer)
@@ -116,11 +120,11 @@ class CriticalArea(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     source = Column(String)
     area_type = Column(String)
-    geometry = Column(Geometry("POLYGON", srid=4326))
+    geometry = Column(Geometry("GEOMETRY", srid=4326))
 
 
 class ShorelineBuffer(Base):
     __tablename__ = "shoreline_buffer"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    geometry = Column(Geometry("POLYGON", srid=4326))
+    geometry = Column(Geometry("GEOMETRY", srid=4326))
