@@ -166,6 +166,14 @@ def candidate_detail(candidate_id: str, session: Session = Depends(db)):
         ).first()
         zone_label = zr.notes if zr else p.zone_code
 
+    # Fetch centroid coordinates
+    coords = session.execute(text("""
+        SELECT ST_Y(ST_Centroid(geometry)) as lat, ST_X(ST_Centroid(geometry)) as lng
+        FROM parcels WHERE id = :pid
+    """), {"pid": str(c.parcel_id)}).fetchone()
+    lat = float(coords.lat) if coords and coords.lat else None
+    lng = float(coords.lng) if coords and coords.lng else None
+
     return {
         "id": str(c.id),
         "tier": c.score_tier.value if c.score_tier else None,
@@ -188,7 +196,42 @@ def candidate_detail(candidate_id: str, session: Session = Depends(db)):
         "wetland_flag": c.has_critical_area_overlap,
         "ag_flag": c.flagged_for_review,
         "shoreline_flag": c.has_shoreline_overlap,
+        "lat": lat,
+        "lng": lng,
     }
+
+
+# ── Candidate Feedback ────────────────────────────────────────────────────
+
+@app.post("/api/candidate/{candidate_id}/feedback")
+async def submit_feedback(
+    candidate_id: str,
+    rating: str = Query(...),  # 'up' or 'down'
+    category: str = Query(""),
+    notes: str = Query(""),
+    session: Session = Depends(db),
+):
+    from sqlalchemy import text as sqlt
+    if rating not in ("up", "down"):
+        return JSONResponse({"error": "invalid rating"}, status_code=400)
+    session.execute(sqlt("""
+        INSERT INTO candidate_feedback (candidate_id, rating, category, notes)
+        VALUES (:cid, :rating, :cat, :notes)
+    """), {"cid": candidate_id, "rating": rating, "cat": category or None, "notes": notes or None})
+    session.commit()
+    return {"ok": True, "rating": rating}
+
+
+@app.get("/api/feedback/stats")
+def feedback_stats(session: Session = Depends(db)):
+    from sqlalchemy import text as sqlt
+    rows = session.execute(sqlt("""
+        SELECT rating, category, count(*) as cnt
+        FROM candidate_feedback
+        GROUP BY rating, category
+        ORDER BY cnt DESC
+    """)).mappings().all()
+    return [dict(r) for r in rows]
 
 
 # ── Leads ──────────────────────────────────────────────────────────────────

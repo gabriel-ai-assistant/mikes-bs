@@ -93,10 +93,12 @@
             {% if c.flagged_for_review %}<span class="badge bg-warning text-dark" title="Ag notification zone">🚜 Ag Zone</span>{% endif %}
           </td>
           <td>
-            <button class="btn btn-sm btn-outline-primary"
-                    onclick="showDetail('{{ c.id }}')" title="View Details">
-              Details
-            </button>
+            <div class="d-flex gap-1">
+              <button class="btn btn-sm btn-outline-success"
+                      onclick="submitFeedback('{{ c.id }}', 'up')" title="Good candidate">👍</button>
+              <button class="btn btn-sm btn-outline-primary"
+                      onclick="showDetail('{{ c.id }}')" title="View Details">Details</button>
+            </div>
           </td>
         </tr>
         {% endfor %}
@@ -126,9 +128,12 @@
 {% endblock %}
 
 {% block scripts %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9/dist/leaflet.js"></script>
 <script>
 const BASE = "{{ base_url }}";
 const modal = new bootstrap.Modal(document.getElementById('detailModal'));
+let _miniMap = null;
 
 function fmt(v, prefix='$') {
   if (v == null) return '—';
@@ -136,7 +141,17 @@ function fmt(v, prefix='$') {
   return v;
 }
 
+async function submitFeedback(id, rating, category='', notes='') {
+  const params = new URLSearchParams({rating});
+  if (category) params.append('category', category);
+  if (notes) params.append('notes', notes);
+  await fetch(`${BASE}/api/candidate/${id}/feedback?${params}`, {method:'POST'});
+}
+
 async function showDetail(id) {
+  // Destroy any previous mini-map instance
+  if (_miniMap) { _miniMap.remove(); _miniMap = null; }
+
   document.getElementById('modalTitle').textContent = 'Loading…';
   document.getElementById('modalBody').innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
   modal.show();
@@ -184,8 +199,52 @@ async function showDetail(id) {
           </div>
         </div>
       </div>
+      <div class="col-12 mt-2">
+        <h6 class="fw-bold text-muted text-uppercase small mb-1">🛰️ Satellite View</h6>
+        ${d.lat ? `
+        <div id="minimap-${d.id}" style="height:200px;border-radius:8px;overflow:hidden;margin-bottom:8px"></div>
+        <div class="d-flex gap-2 mb-2">
+          <a href="https://www.google.com/maps/@${d.lat},${d.lng},18z/data=!3m1!1e3" target="_blank" class="btn btn-sm btn-outline-secondary">📍 Google Maps</a>
+          <a href="https://earth.google.com/web/@${d.lat},${d.lng},500a,500d,35y,0h,0t,0r" target="_blank" class="btn btn-sm btn-outline-secondary">🌍 Google Earth</a>
+        </div>` : '<span class="text-muted small">No coordinates available</span>'}
+      </div>
+      <div class="col-12 mt-1 border-top pt-3">
+        <div class="fw-semibold small mb-2">Was this a good candidate?</div>
+        <div class="d-flex gap-2 align-items-start">
+          <button class="btn btn-success btn-sm" onclick="submitFeedback('${d.id}','up'); this.textContent='👍 Saved!'; this.disabled=true">👍 Yes</button>
+          <div>
+            <button class="btn btn-danger btn-sm" onclick="document.getElementById('fbForm-${d.id}').classList.toggle('d-none')">👎 No</button>
+            <div id="fbForm-${d.id}" class="d-none mt-2">
+              <select id="fbCat-${d.id}" class="form-select form-select-sm mb-1">
+                <option value="">Select reason…</option>
+                <option value="wrong_use">Wrong use type (substation, commercial, etc.)</option>
+                <option value="utility">Utility / govt owned</option>
+                <option value="hoa">HOA / association land</option>
+                <option value="not_buildable">Not buildable (wetland, access issue)</option>
+                <option value="other">Other</option>
+              </select>
+              <textarea id="fbNotes-${d.id}" class="form-control form-control-sm mb-1" rows="2" placeholder="Notes (optional)…"></textarea>
+              <button class="btn btn-danger btn-sm" onclick="
+                const cat = document.getElementById('fbCat-${d.id}').value;
+                const notes = document.getElementById('fbNotes-${d.id}').value;
+                submitFeedback('${d.id}','down',cat,notes);
+                document.getElementById('fbForm-${d.id}').innerHTML='<span class=\\'text-danger small\\'>👎 Feedback saved</span>';
+              ">Submit</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   `;
+
+  if (d.lat) {
+    setTimeout(() => {
+      _miniMap = L.map(`minimap-${d.id}`, {zoomControl: false, attributionControl: false})
+        .setView([d.lat, d.lng], 17);
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}').addTo(_miniMap);
+      L.marker([d.lat, d.lng]).addTo(_miniMap);
+    }, 300);
+  }
 }
 </script>
 {% endblock %}

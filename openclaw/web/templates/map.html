@@ -12,6 +12,8 @@
       <button class="btn btn-sm btn-outline-warning" onclick="filterTier('B')" id="btn-B">✅ Tier B</button>
       <div class="vr"></div>
       <span class="small text-muted" id="countLabel">Loading…</span>
+      <div class="vr"></div>
+      <button id="satBtn" class="btn btn-sm btn-outline-secondary" onclick="toggleSatellite()">🛰️ Satellite</button>
     </div>
   </div>
 </div>
@@ -39,9 +41,30 @@
 const BASE = "{{ base_url }}";
 
 const map = L.map('map').setView([47.9, -122.1], 10);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+
+const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© OpenStreetMap contributors'
-}).addTo(map);
+});
+const satelliteLayer = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  { attribution: 'Imagery © Esri' }
+);
+streetLayer.addTo(map);
+
+let satActive = false;
+function toggleSatellite() {
+  if (satActive) {
+    map.removeLayer(satelliteLayer);
+    map.addLayer(streetLayer);
+    document.getElementById('satBtn').textContent = '🛰️ Satellite';
+    satActive = false;
+  } else {
+    map.removeLayer(streetLayer);
+    map.addLayer(satelliteLayer);
+    document.getElementById('satBtn').textContent = '🗺️ Street Map';
+    satActive = true;
+  }
+}
 
 let markers = [];
 let currentTier = '';
