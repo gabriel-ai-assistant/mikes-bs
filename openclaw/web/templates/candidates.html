@@ -5,7 +5,7 @@
 <!-- Filters -->
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-body py-2">
-    <form method="get" class="row g-2 align-items-end">
+    <form method="get" id="filterForm" class="row g-2 align-items-end">
       <div class="col-12 col-md-4">
         <input type="text" name="q" class="form-control" placeholder="Search address or owner name…" value="{{ search }}">
       </div>
@@ -36,12 +36,49 @@
       <div class="col-6 col-md-2">
         <button type="submit" class="btn btn-primary w-100">Filter</button>
       </div>
+      <!-- Hidden inputs for tag filter (managed by JS below) -->
+      <input type="hidden" name="tags" id="hiddenTags" value="{{ tags }}">
+      <input type="hidden" name="tags_mode" id="hiddenTagsMode" value="{{ tags_mode }}">
     </form>
   </div>
 </div>
 
+<!-- Tag / Flags Filter Bar -->
+<div class="card border-0 shadow-sm mb-3" id="tagFilterCard">
+  <div class="card-body py-2">
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <span class="fw-semibold small text-muted text-uppercase" style="letter-spacing:.04em">🏷️ Flags</span>
+
+      <!-- Tag dropdown trigger -->
+      <div class="dropdown" id="tagDropdownWrapper">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="tagDropdownBtn" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+          <span id="tagDropdownLabel">Select tags…</span>
+        </button>
+        <div class="dropdown-menu p-2 shadow" style="min-width:280px;max-height:320px;overflow-y:auto" id="tagDropdownMenu">
+          <div class="text-muted small text-center py-2" id="tagLoadingMsg">Loading…</div>
+        </div>
+      </div>
+
+      <!-- Match mode toggle -->
+      <div class="btn-group btn-group-sm" role="group" id="matchModeGroup">
+        <input type="radio" class="btn-check" name="matchMode" id="modeAny" autocomplete="off" checked>
+        <label class="btn btn-outline-secondary" for="modeAny">Match ANY</label>
+        <input type="radio" class="btn-check" name="matchMode" id="modeAll" autocomplete="off">
+        <label class="btn btn-outline-secondary" for="modeAll">Match ALL</label>
+      </div>
+
+      <!-- Apply / Clear -->
+      <button class="btn btn-sm btn-primary" id="applyTagsBtn" onclick="applyTagFilter()">Apply</button>
+      <button class="btn btn-sm btn-outline-secondary" id="clearTagsBtn" onclick="clearTagFilter()">Clear</button>
+    </div>
+
+    <!-- Active filter chips -->
+    <div id="activeTagChips" class="mt-2 d-flex flex-wrap gap-1"></div>
+  </div>
+</div>
+
 <div class="d-flex justify-content-between align-items-center mb-2">
-  <span class="text-muted small">Showing {{ candidates|length }} results</span>
+  <span class="text-muted small" id="resultCount">Showing <strong>{{ candidates|length }}</strong> results</span>
   <a href="{{ base_url }}/map" class="btn btn-sm btn-outline-secondary">🗺️ View on Map</a>
 </div>
 
@@ -140,8 +177,148 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9/dist/leaflet.js"></script>
 <script>
+
+// ── Tag Filter Logic ──────────────────────────────────────────────────────
 const BASE = "{{ base_url }}";
+
+// Parse current tags from server-rendered value
+let _selectedTags = new Set(
+  "{{ tags }}".split(",").map(t => t.trim()).filter(t => t.length > 0)
+);
+let _allTagData = [];
+
+function tagColor(tag) {
+  if (tag.startsWith('EDGE_')) return {bg:'#d1fae5',text:'#065f46',border:'#6ee7b7'};
+  if (tag.startsWith('RISK_')) return {bg:'#fee2e2',text:'#991b1b',border:'#fca5a5'};
+  return {bg:'#f3f4f6',text:'#374151',border:'#d1d5db'};
+}
+
+function renderChips() {
+  const container = document.getElementById('activeTagChips');
+  if (!container) return;
+  container.innerHTML = '';
+  _selectedTags.forEach(tag => {
+    const c = tagColor(tag);
+    const chip = document.createElement('span');
+    chip.className = 'badge d-inline-flex align-items-center gap-1 px-2 py-1';
+    chip.style.cssText = `background:${c.bg};color:${c.text};border:1px solid ${c.border};font-size:.75rem;cursor:default`;
+    chip.innerHTML = `${escHtml(tag)} <button type="button" class="btn-close" style="font-size:.5rem;filter:none" aria-label="Remove" onclick="removeTag('${escHtml(tag)}')"></button>`;
+    container.appendChild(chip);
+  });
+  // Update dropdown label
+  const btn = document.getElementById('tagDropdownLabel');
+  if (btn) btn.textContent = _selectedTags.size > 0 ? `${_selectedTags.size} tag(s) selected` : 'Select tags\u2026';
+}
+
+function removeTag(tag) {
+  _selectedTags.delete(tag);
+  renderChips();
+  renderDropdownItems();
+}
+
+function renderDropdownItems() {
+  const menu = document.getElementById('tagDropdownMenu');
+  if (!menu) return;
+  menu.innerHTML = '';
+  if (_allTagData.length === 0) {
+    menu.innerHTML = '<div class="text-muted small text-center py-2">No tags available</div>';
+    return;
+  }
+  const groups = [
+    { prefix: 'EDGE_', label: 'EDGE tags', color: 'text-success' },
+    { prefix: 'RISK_', label: 'RISK tags', color: 'text-danger' },
+    { prefix: '',      label: 'Other tags', color: 'text-secondary' },
+  ];
+  let rendered = new Set();
+  groups.forEach(({prefix, label, color}) => {
+    const items = _allTagData.filter(t =>
+      prefix ? t.tag.startsWith(prefix)
+             : !t.tag.startsWith('EDGE_') && !t.tag.startsWith('RISK_')
+    );
+    if (items.length === 0) return;
+    const hdr = document.createElement('div');
+    hdr.className = `dropdown-header small fw-bold ${color} py-1`;
+    hdr.textContent = label;
+    menu.appendChild(hdr);
+    items.forEach(({tag, count}) => {
+      if (rendered.has(tag)) return;
+      rendered.add(tag);
+      const item = document.createElement('label');
+      item.className = 'd-flex align-items-center gap-2 px-2 py-1 rounded';
+      item.style.cssText = 'cursor:pointer;font-size:.82rem';
+      item.onmouseenter = () => item.style.background = '#f8f9fa';
+      item.onmouseleave = () => item.style.background = '';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = tag;
+      cb.checked = _selectedTags.has(tag);
+      cb.className = 'form-check-input me-1';
+      cb.addEventListener('change', () => {
+        if (cb.checked) _selectedTags.add(tag);
+        else _selectedTags.delete(tag);
+        renderChips();
+      });
+      const tagSpan = document.createElement('span');
+      const c = tagColor(tag);
+      tagSpan.innerHTML = `<span class="badge" style="background:${c.bg};color:${c.text};border:1px solid ${c.border};font-size:.72rem">${escHtml(tag)}</span>`;
+      const cntSpan = document.createElement('span');
+      cntSpan.className = 'text-muted ms-auto';
+      cntSpan.style.fontSize = '.75rem';
+      cntSpan.textContent = count.toLocaleString();
+      item.appendChild(cb);
+      item.appendChild(tagSpan);
+      item.appendChild(cntSpan);
+      menu.appendChild(item);
+    });
+    const divider = document.createElement('div');
+    divider.className = 'dropdown-divider my-1';
+    menu.appendChild(divider);
+  });
+}
+
+async function loadTags() {
+  try {
+    const data = await fetch(`${BASE}/api/tags`).then(r => r.json());
+    _allTagData = data;
+    const loadMsg = document.getElementById('tagLoadingMsg');
+    if (loadMsg) loadMsg.remove();
+    renderDropdownItems();
+    renderChips();
+  } catch(e) {
+    const msg = document.getElementById('tagLoadingMsg');
+    if (msg) msg.textContent = 'Failed to load tags';
+  }
+}
+
+function applyTagFilter() {
+  document.getElementById('hiddenTags').value = Array.from(_selectedTags).join(',');
+  document.getElementById('hiddenTagsMode').value = document.getElementById('modeAll').checked ? 'all' : 'any';
+  document.getElementById('filterForm').submit();
+}
+
+function clearTagFilter() {
+  _selectedTags.clear();
+  renderChips();
+  renderDropdownItems();
+  document.getElementById('hiddenTags').value = '';
+  document.getElementById('hiddenTagsMode').value = 'any';
+  document.getElementById('filterForm').submit();
+}
+
+// Restore match mode from current URL param
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('tags_mode') === 'all') {
+    document.getElementById('modeAll').checked = true;
+  }
+})();
+
+// Load tags on page load
+loadTags();
+
+// ── Original script globals ────────────────────────────────────────────────
 const modal = new bootstrap.Modal(document.getElementById('detailModal'));
+
 let _miniMap = null;
 
 function fmt(v, prefix='$') {

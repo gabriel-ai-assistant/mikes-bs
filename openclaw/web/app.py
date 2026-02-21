@@ -5,6 +5,8 @@ import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from typing import List, Optional
+
 from fastapi import FastAPI, Request, Depends, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -105,6 +107,8 @@ def candidates_page(
     sort: str = Query("splits", alias="sort"),
     wetland: str = Query("", alias="wetland"),
     ag: str = Query("", alias="ag"),
+    tags: Optional[str] = Query(None, alias="tags"),
+    tags_mode: str = Query("any", alias="tags_mode"),
     session: Session = Depends(db),
 ):
     q = (
@@ -124,6 +128,20 @@ def candidates_page(
         q = q.filter(Candidate.has_critical_area_overlap == True)
     if ag == "1":
         q = q.filter(Candidate.flagged_for_review == True)
+    if tags:
+        tags_list = [t.strip() for t in tags.split(",") if t.strip()]
+        if tags_list:
+            if tags_mode == "all":
+                # ALL tags must be present: each tag = ANY(candidates.tags)
+                for _t in tags_list:
+                    q = q.filter(text(":_tag = ANY(candidates.tags)").bindparams(_tag=_t))
+            else:
+                # ANY tag must be present
+                from sqlalchemy import or_
+                q = q.filter(or_(*[
+                    text(f":_tag_{i} = ANY(candidates.tags)").bindparams(**{f"_tag_{i}": _t})
+                    for i, _t in enumerate(tags_list)
+                ]))
 
     sort_map = {
         "splits": Candidate.potential_splits.desc(),
@@ -145,7 +163,89 @@ def candidates_page(
         "zone_labels": zone_labels,
         "search": search, "tier": tier, "sort": sort,
         "wetland": wetland, "ag": ag,
+        "tags": tags or "", "tags_mode": tags_mode,
     })
+
+
+
+@app.get("/api/tags")
+def get_all_tags(session: Session = Depends(db)):
+    """Return all distinct tags used across candidates with counts."""
+    rows = session.execute(text("""
+        SELECT DISTINCT unnest(tags) as tag, count(*) as cnt
+        FROM candidates
+        WHERE tags IS NOT NULL
+        GROUP BY tag ORDER BY cnt DESC
+    """)).mappings().all()
+    return [{"tag": r["tag"], "count": r["cnt"]} for r in rows]
+
+
+@app.get("/api/candidates")
+def get_candidates_api(
+    search: str = Query("", alias="q"),
+    tier: str = Query("", alias="tier"),
+    sort: str = Query("splits", alias="sort"),
+    wetland: str = Query("", alias="wetland"),
+    ag: str = Query("", alias="ag"),
+    tags: Optional[str] = Query(None, alias="tags"),
+    tags_mode: str = Query("any", alias="tags_mode"),
+    limit: int = Query(500),
+    offset: int = Query(0),
+    session: Session = Depends(db),
+):
+    """JSON API for candidates with optional tag filtering."""
+    q = (
+        session.query(Candidate)
+        .join(Parcel)
+        .options(joinedload(Candidate.parcel))
+    )
+    if search:
+        q = q.filter(
+            Parcel.address.ilike(f"%{search}%") |
+            Parcel.owner_name.ilike(f"%{search}%") |
+            Parcel.owner_address.ilike(f"%{search}%")
+        )
+    if tier in ("A", "B", "C", "D", "E", "F"):
+        q = q.filter(Candidate.score_tier == ScoreTierEnum(tier))
+    if wetland == "1":
+        q = q.filter(Candidate.has_critical_area_overlap == True)
+    if ag == "1":
+        q = q.filter(Candidate.flagged_for_review == True)
+    if tags:
+        tags_list = [t.strip() for t in tags.split(",") if t.strip()]
+        if tags_list:
+            if tags_mode == "all":
+                for _t in tags_list:
+                    q = q.filter(text(":_tag = ANY(candidates.tags)").bindparams(_tag=_t))
+            else:
+                from sqlalchemy import or_
+                q = q.filter(or_(*[
+                    text(f":_tag_{i} = ANY(candidates.tags)").bindparams(**{f"_tag_{i}": _t})
+                    for i, _t in enumerate(tags_list)
+                ]))
+    total = q.count()
+    sort_map = {
+        "splits": Candidate.potential_splits.desc(),
+        "lot":    Parcel.lot_sf.desc(),
+        "value":  Parcel.assessed_value.desc(),
+    }
+    q = q.order_by(sort_map.get(sort, Candidate.potential_splits.desc()))
+    rows = q.offset(offset).limit(limit).all()
+    return {
+        "total": total,
+        "count": len(rows),
+        "candidates": [
+            {
+                "id": str(c.id),
+                "address": c.parcel.address,
+                "owner": c.parcel.owner_name,
+                "tier": c.score_tier.value if c.score_tier else None,
+                "splits": c.potential_splits,
+                "tags": c.tags or [],
+            }
+            for c in rows
+        ]
+    }
 
 
 # ── Candidate detail API ───────────────────────────────────────────────────
