@@ -6,107 +6,115 @@ Create Date: 2026-02-20
 """
 from typing import Sequence, Union
 from alembic import op
-import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID
-import geoalchemy2
 
 revision: str = "001"
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-county_enum = sa.Enum("king", "snohomish", "skagit", name="countyenum", create_type=False)
-score_tier_enum = sa.Enum("A", "B", "C", name="scoretierenum", create_type=False)
-lead_status_enum = sa.Enum("new", "reviewed", "outreach", "active", "dead", name="leadstatusenum", create_type=False)
-
 
 def upgrade() -> None:
-    # Enable PostGIS
     op.execute("CREATE EXTENSION IF NOT EXISTS postgis")
 
-    county_enum.create(op.get_bind(), checkfirst=True)
-    score_tier_enum.create(op.get_bind(), checkfirst=True)
-    lead_status_enum.create(op.get_bind(), checkfirst=True)
+    op.execute("""
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'countyenum') THEN
+                CREATE TYPE countyenum AS ENUM ('king', 'snohomish', 'skagit');
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'scoretierenum') THEN
+                CREATE TYPE scoretierenum AS ENUM ('A', 'B', 'C');
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'leadstatusenum') THEN
+                CREATE TYPE leadstatusenum AS ENUM ('new', 'reviewed', 'outreach', 'active', 'dead');
+            END IF;
+        END $$
+    """)
 
-    op.create_table(
-        "parcels",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("parcel_id", sa.String, nullable=False, index=True),
-        sa.Column("county", county_enum, nullable=False),
-        sa.Column("address", sa.String),
-        sa.Column("owner_name", sa.String),
-        sa.Column("owner_mailing_address", sa.String),
-        sa.Column("lot_sf", sa.Integer),
-        sa.Column("zone_code", sa.String),
-        sa.Column("present_use", sa.String),
-        sa.Column("assessed_value", sa.Integer),
-        sa.Column("last_sale_price", sa.Integer),
-        sa.Column("last_sale_date", sa.Date),
-        sa.Column("geometry", geoalchemy2.Geometry("POLYGON", srid=4326)),
-        sa.Column("ingested_at", sa.DateTime, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime, server_default=sa.func.now()),
-        sa.UniqueConstraint("parcel_id", "county", name="uq_parcel_county"),
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS parcels (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            parcel_id VARCHAR NOT NULL,
+            county countyenum NOT NULL,
+            address VARCHAR,
+            owner_name VARCHAR,
+            owner_mailing_address VARCHAR,
+            lot_sf INTEGER,
+            zone_code VARCHAR,
+            present_use VARCHAR,
+            assessed_value INTEGER,
+            last_sale_price INTEGER,
+            last_sale_date DATE,
+            geometry geometry(POLYGON, 4326),
+            ingested_at TIMESTAMP DEFAULT now(),
+            updated_at TIMESTAMP DEFAULT now(),
+            CONSTRAINT uq_parcel_county UNIQUE (parcel_id, county)
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_parcels_parcel_id ON parcels (parcel_id)")
 
-    op.create_table(
-        "zoning_rules",
-        sa.Column("county", county_enum, nullable=False),
-        sa.Column("zone_code", sa.String, nullable=False),
-        sa.Column("min_lot_sf", sa.Integer),
-        sa.Column("min_lot_width_ft", sa.Integer),
-        sa.Column("max_du_per_acre", sa.Float),
-        sa.Column("notes", sa.String),
-        sa.PrimaryKeyConstraint("county", "zone_code"),
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS zoning_rules (
+            county countyenum NOT NULL,
+            zone_code VARCHAR NOT NULL,
+            min_lot_sf INTEGER,
+            min_lot_width_ft INTEGER,
+            max_du_per_acre DOUBLE PRECISION,
+            notes VARCHAR,
+            PRIMARY KEY (county, zone_code)
+        )
+    """)
 
-    op.create_table(
-        "candidates",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("parcel_id", UUID(as_uuid=True), sa.ForeignKey("parcels.id"), nullable=False),
-        sa.Column("score_tier", score_tier_enum),
-        sa.Column("potential_splits", sa.Integer),
-        sa.Column("estimated_land_value", sa.Integer),
-        sa.Column("estimated_dev_cost", sa.Integer),
-        sa.Column("estimated_build_cost", sa.Integer),
-        sa.Column("estimated_arv", sa.Integer),
-        sa.Column("estimated_profit", sa.Integer),
-        sa.Column("estimated_margin_pct", sa.Float),
-        sa.Column("has_critical_area_overlap", sa.Boolean, server_default="false"),
-        sa.Column("has_shoreline_overlap", sa.Boolean, server_default="false"),
-        sa.Column("flagged_for_review", sa.Boolean, server_default="false"),
-        sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS candidates (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            parcel_id UUID NOT NULL REFERENCES parcels(id),
+            score_tier scoretierenum,
+            potential_splits INTEGER,
+            estimated_land_value INTEGER,
+            estimated_dev_cost INTEGER,
+            estimated_build_cost INTEGER,
+            estimated_arv INTEGER,
+            estimated_profit INTEGER,
+            estimated_margin_pct DOUBLE PRECISION,
+            has_critical_area_overlap BOOLEAN DEFAULT false,
+            has_shoreline_overlap BOOLEAN DEFAULT false,
+            flagged_for_review BOOLEAN DEFAULT false,
+            created_at TIMESTAMP DEFAULT now()
+        )
+    """)
 
-    op.create_table(
-        "leads",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("candidate_id", UUID(as_uuid=True), sa.ForeignKey("candidates.id"), nullable=False),
-        sa.Column("status", lead_status_enum, server_default="new"),
-        sa.Column("owner_phone", sa.String),
-        sa.Column("owner_email", sa.String),
-        sa.Column("notes", sa.Text),
-        sa.Column("contacted_at", sa.DateTime),
-        sa.Column("contact_method", sa.String),
-        sa.Column("outcome", sa.String),
-        sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime, server_default=sa.func.now()),
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS leads (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            candidate_id UUID NOT NULL REFERENCES candidates(id),
+            status leadstatusenum DEFAULT 'new',
+            owner_phone VARCHAR,
+            owner_email VARCHAR,
+            notes TEXT,
+            contacted_at TIMESTAMP,
+            contact_method VARCHAR,
+            outcome VARCHAR,
+            created_at TIMESTAMP DEFAULT now(),
+            updated_at TIMESTAMP DEFAULT now()
+        )
+    """)
 
-    op.create_table(
-        "critical_areas",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("source", sa.String),
-        sa.Column("area_type", sa.String),
-        sa.Column("geometry", geoalchemy2.Geometry("POLYGON", srid=4326)),
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS critical_areas (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            source VARCHAR,
+            area_type VARCHAR,
+            geometry geometry(POLYGON, 4326)
+        )
+    """)
 
-    op.create_table(
-        "shoreline_buffer",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("geometry", geoalchemy2.Geometry("POLYGON", srid=4326)),
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS shoreline_buffer (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            geometry geometry(POLYGON, 4326)
+        )
+    """)
 
-    # Seed zoning rules — real WA state residential zones
     op.execute("""
         INSERT INTO zoning_rules (county, zone_code, min_lot_sf, min_lot_width_ft, max_du_per_acre, notes) VALUES
         ('king',      'R-1',  43560, 135, 1.0,  'Rural residential, 1 acre minimum'),
@@ -123,16 +131,17 @@ def upgrade() -> None:
         ('skagit',    'R',     12500, 80, 3.5,  'Residential general'),
         ('skagit',    'RRv',   43560, 100, 1.0, 'Rural reserve'),
         ('skagit',    'R-C',    7000, 60, 6.2,  'Residential compact')
+        ON CONFLICT DO NOTHING
     """)
 
 
 def downgrade() -> None:
-    op.drop_table("shoreline_buffer")
-    op.drop_table("critical_areas")
-    op.drop_table("leads")
-    op.drop_table("candidates")
-    op.drop_table("zoning_rules")
-    op.drop_table("parcels")
-    lead_status_enum.drop(op.get_bind(), checkfirst=True)
-    score_tier_enum.drop(op.get_bind(), checkfirst=True)
-    county_enum.drop(op.get_bind(), checkfirst=True)
+    op.execute("DROP TABLE IF EXISTS shoreline_buffer")
+    op.execute("DROP TABLE IF EXISTS critical_areas")
+    op.execute("DROP TABLE IF EXISTS leads")
+    op.execute("DROP TABLE IF EXISTS candidates")
+    op.execute("DROP TABLE IF EXISTS zoning_rules")
+    op.execute("DROP TABLE IF EXISTS parcels")
+    op.execute("DROP TYPE IF EXISTS leadstatusenum")
+    op.execute("DROP TYPE IF EXISTS scoretierenum")
+    op.execute("DROP TYPE IF EXISTS countyenum")
