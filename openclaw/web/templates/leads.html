@@ -59,7 +59,7 @@
 {% block scripts %}
 <script>
 function updateStatus(id,status){
-  fetch('/api/lead/'+id+'/status?status='+status,{method:'POST'}).then(()=>location.reload());
+  fetch(BASE+'/api/lead/'+id+'/status?status='+status,{method:'POST'}).then(()=>location.reload());
 }
 </script>
 {% endblock %}

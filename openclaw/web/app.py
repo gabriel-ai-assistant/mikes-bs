@@ -16,9 +16,12 @@ from openclaw.db.models import Parcel, Candidate, Lead, ScoreTierEnum, LeadStatu
 
 BASE_DIR = Path(__file__).resolve().parent
 
-app = FastAPI(title="Mike's Building System", docs_url=None, redoc_url=None)
+import os
+_root_path = os.environ.get("ROOT_PATH", "")
+app = FastAPI(title="Mike's Building System", docs_url=None, redoc_url=None, root_path=_root_path)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+templates.env.globals["base_url"] = _root_path
 
 
 def fmt_money(value):

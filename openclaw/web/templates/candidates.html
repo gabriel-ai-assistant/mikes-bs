@@ -70,7 +70,7 @@ const modal = new bootstrap.Modal(document.getElementById('detailModal'));
 function showDetail(id){
   document.getElementById('detailBody').innerHTML='<div class="text-center p-4"><div class="spinner-border text-primary"></div></div>';
   modal.show();
-  fetch('/api/candidate/'+id).then(r=>r.json()).then(d=>{
+  fetch(BASE+'/api/candidate/'+id).then(r=>r.json()).then(d=>{
     if(d.error){document.getElementById('detailBody').innerHTML='<p class="text-danger">Not found</p>';return;}
     const m=v=>v!=null?'$'+v.toLocaleString():'—';
     const p=v=>v!=null?v.toFixed(1)+'%':'—';
