@@ -41,6 +41,8 @@ FIELD_MAP = {
     'has_ag':      lambda c: str(c.get('flagged_for_review', False)).lower(),
     'improvement_value': lambda c: float(c.get('improvement_value') or 0),
     'total_value': lambda c: float(c.get('total_value') or 0),
+    # NEW: tag list for tag_contains operator
+    'tags':        lambda c: c.get('tags') or [],
 }
 
 
@@ -82,6 +84,8 @@ def evaluate_rule(rule: dict, candidate: dict) -> bool:
             return float(field_val or 0) >= float(rule_val)
         elif op == 'lte':
             return float(field_val or 0) <= float(rule_val)
+        elif op == 'tag_contains':
+            return rule_val in [t.lower() for t in field_val]
     except (ValueError, TypeError):
         return False
     return False
@@ -123,20 +127,43 @@ def score_to_tier(score: int) -> str:
     return 'F'
 
 
-def evaluate_candidate(candidate: dict, rules: list[dict]) -> tuple[str, int, bool]:
+def evaluate_candidate(candidate: dict, rules: list[dict]) -> tuple[str, int, bool, list, list]:
     """
     Evaluate a candidate against all rules.
-    Returns: (tier, score, exclude)
+    Returns: (tier, score, exclude, tags, reason_codes)
     """
     # Check exclude rules first
     for rule in rules:
         if rule['action'] == 'exclude' and evaluate_rule(rule, candidate):
-            return ('F', 0, True)
+            return ('F', 0, True, [], [])
 
     # Base score
     score = base_score(candidate)
 
-    # Apply score adjustments
+    # Compute EDGE/RISK tags
+    from openclaw.analysis.tagger import compute_tags
+    from openclaw.analysis.edge_config import edge_config as _edge_cfg
+    tags, tag_reasons = compute_tags(candidate, config=_edge_cfg)
+    candidate['tags'] = tags  # make tags available to rule matching below
+
+    # Apply EDGE score boosts
+    edge_boosts = {
+        'EDGE_SNOCO_LSA_R5_RD_FR': _edge_cfg.weight_lsa,
+        'EDGE_SNOCO_RUTA_ARBITRAGE': _edge_cfg.weight_ruta,
+        'EDGE_WA_HB1110_MIDDLE_HOUSING': _edge_cfg.weight_hb1110,
+        'EDGE_WA_UNIT_LOT_SUBDIVISION': _edge_cfg.weight_unit_lot,
+        'EDGE_SNOCO_RURAL_CLUSTER_BONUS': _edge_cfg.weight_rural_cluster,
+    }
+    for tag, weight in edge_boosts.items():
+        if tag in tags:
+            score += weight
+
+    # Apply RISK penalties (cap at -30 total)
+    risk_tags = [t for t in tags if t.startswith('RISK_')]
+    risk_penalty = max(_edge_cfg.weight_risk_penalty * len(risk_tags), -30)
+    score += risk_penalty
+
+    # Apply rule-based score adjustments
     explicit_tier = None
     for rule in rules:
         if not evaluate_rule(rule, candidate):
@@ -149,7 +176,10 @@ def evaluate_candidate(candidate: dict, rules: list[dict]) -> tuple[str, int, bo
 
     score = min(max(score, 0), 100)
     tier = explicit_tier or score_to_tier(score)
-    return (tier, score, False)
+
+    # Collect all reason codes
+    all_reasons = tag_reasons  # extend with rule-triggered reasons if needed
+    return (tier, score, False, tags, all_reasons)
 
 
 def rescore_all() -> dict:
@@ -167,7 +197,8 @@ def rescore_all() -> dict:
                 c.has_critical_area_overlap,
                 c.flagged_for_review,
                 p.present_use, p.owner_name, p.zone_code,
-                p.lot_sf, p.assessed_value, p.improvement_value, p.total_value
+                p.lot_sf, p.assessed_value, p.improvement_value, p.total_value,
+                p.address, p.county
             FROM candidates c
             JOIN parcels p ON c.parcel_id = p.id
         """)).mappings().all()
@@ -180,22 +211,27 @@ def rescore_all() -> dict:
 
         for row in rows:
             candidate = dict(row)
-            tier, score, exclude = evaluate_candidate(candidate, rules)
+            tier, score, exclude, tags, reasons = evaluate_candidate(candidate, rules)
             if exclude:
                 excluded += 1
-                # Mark as F and flag for deletion
-                updates.append({'id': str(row['candidate_id']), 'tier': 'F', 'score': 0})
+                updates.append({'id': str(row['candidate_id']), 'tier': 'F', 'score': 0, 'tags': [], 'reasons': []})
             else:
                 tier_counts[tier] = tier_counts.get(tier, 0) + 1
-                updates.append({'id': str(row['candidate_id']), 'tier': tier, 'score': score})
+                updates.append({'id': str(row['candidate_id']), 'tier': tier, 'score': score, 'tags': tags, 'reasons': reasons})
 
-        # Bulk update tiers using psycopg2 execute_values for performance
+        # Ensure columns exist
         session.execute(text(
             "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS score INTEGER DEFAULT 0"
         ))
+        session.execute(text(
+            "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS tags TEXT[] DEFAULT '{}'"
+        ))
+        session.execute(text(
+            "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS reason_codes TEXT[] DEFAULT '{}'"
+        ))
         session.commit()
 
-        # Build bulk update via temp table approach — avoids row-by-row and cast issues
+        # Bulk update via psycopg2 execute_values
         from psycopg2.extras import execute_values
         raw_conn = session.connection().connection
         cur = raw_conn.cursor()
@@ -203,10 +239,12 @@ def rescore_all() -> dict:
         execute_values(cur, """
             UPDATE candidates SET
                 score_tier = v.tier::scoretierenum,
-                score = v.score
-            FROM (VALUES %s) AS v(id, tier, score)
+                score = v.score,
+                tags = v.tags,
+                reason_codes = v.reasons
+            FROM (VALUES %s) AS v(id, tier, score, tags, reasons)
             WHERE candidates.id = v.id::uuid
-        """, [(u['id'], u['tier'], u['score']) for u in updates])
+        """, [(u['id'], u['tier'], u['score'], u['tags'], u['reasons']) for u in updates])
         raw_conn.commit()
         cur.close()
 

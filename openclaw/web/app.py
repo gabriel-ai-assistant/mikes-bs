@@ -200,6 +200,8 @@ def candidate_detail(candidate_id: str, session: Session = Depends(db)):
         "wetland_flag": c.has_critical_area_overlap,
         "ag_flag": c.flagged_for_review,
         "shoreline_flag": c.has_shoreline_overlap,
+        "tags": c.tags or [],
+        "reason_codes": c.reason_codes or [],
         "lat": lat,
         "lng": lng,
     }
@@ -450,7 +452,7 @@ def rescore_preview(session: Session = Depends(db)):
     preview = {t: 0 for t in 'ABCDEF'}
     excluded = 0
     for row in rows:
-        tier, score, excl = evaluate_candidate(dict(row), rules)
+        tier, score, excl, _tags, _reasons = evaluate_candidate(dict(row), rules)
         if excl:
             excluded += 1
         else:

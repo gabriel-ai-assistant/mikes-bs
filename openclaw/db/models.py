@@ -9,7 +9,7 @@ from sqlalchemy import (
     Column, String, Integer, Float, Boolean, Text, Date, DateTime,
     Enum, ForeignKey, UniqueConstraint, PrimaryKeyConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -83,6 +83,7 @@ class Candidate(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     parcel_id = Column(UUID(as_uuid=True), ForeignKey("parcels.id"), nullable=False)
     score_tier = Column(Enum(ScoreTierEnum))
+    score = Column(Integer, default=0)
     potential_splits = Column(Integer)
     estimated_land_value = Column(Integer)
     estimated_dev_cost = Column(Integer)
@@ -93,6 +94,8 @@ class Candidate(Base):
     has_critical_area_overlap = Column(Boolean, default=False)
     has_shoreline_overlap = Column(Boolean, default=False)
     flagged_for_review = Column(Boolean, default=False)
+    tags = Column(ARRAY(String), default=list)
+    reason_codes = Column(ARRAY(String), default=list)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     parcel = relationship("Parcel", back_populates="candidates")
@@ -130,4 +133,12 @@ class ShorelineBuffer(Base):
     __tablename__ = "shoreline_buffer"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    geometry = Column(Geometry("GEOMETRY", srid=4326))
+
+
+class RutaBoundary(Base):
+    __tablename__ = "ruta_boundaries"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String)
     geometry = Column(Geometry("GEOMETRY", srid=4326))
