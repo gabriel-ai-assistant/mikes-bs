@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% set active = "dashboard" %}
+{% block title %}Dashboard — Mike's Building System{% endblock %}
+{% block content %}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3"><div class="stat-card"><p>Total Parcels</p><h2>{{ "{:,}".format(total_parcels) }}</h2></div></div>
+  <div class="col-6 col-md-3"><div class="stat-card"><p>Candidates</p><h2>{{ "{:,}".format(total_candidates) }}</h2></div></div>
+  <div class="col-6 col-md-3"><div class="stat-card"><p>Tier A</p><h2 class="text-success">{{ "{:,}".format(tier_a) }}</h2></div></div>
+  <div class="col-6 col-md-3"><div class="stat-card"><p>New Leads This Week</p><h2 style="color:#2563EB">{{ "{:,}".format(new_leads_week) }}</h2></div></div>
+</div>
+
+{% if total_candidates == 0 %}
+<div class="empty-state">
+  <i class="bi bi-bar-chart-line"></i>
+  <h4>No data yet</h4>
+  <p>Run the pipeline to populate candidates and see charts here.</p>
+</div>
+{% else %}
+<div class="row g-3">
+  <div class="col-md-5">
+    <div class="stat-card"><h5>Candidates by Tier</h5><canvas id="tierChart" height="260"></canvas></div>
+  </div>
+  <div class="col-md-7">
+    <div class="stat-card"><h5>Candidates by County</h5><canvas id="countyChart" height="260"></canvas></div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if total_candidates > 0 %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+const tierData = {{ tier_data_json|safe }};
+const counties = {{ counties_json|safe }};
+const countyData = {{ county_data_json|safe }};
+new Chart(document.getElementById('tierChart'),{type:'doughnut',data:{labels:['Tier A','Tier B','Tier C'],datasets:[{data:tierData,backgroundColor:['#16a34a','#eab308','#9ca3af']}]},options:{plugins:{legend:{position:'bottom'}}}});
+new Chart(document.getElementById('countyChart'),{type:'bar',data:{labels:counties,datasets:[{label:'Candidates',data:countyData,backgroundColor:'#2563EB'}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{precision:0}}}}});
+</script>
+{% endif %}
+{% endblock %}

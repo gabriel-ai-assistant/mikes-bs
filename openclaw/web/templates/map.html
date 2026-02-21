@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% set active = "map" %}
+{% block title %}Map — Mike's Building System{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>#map{height:calc(100vh - 80px);border-radius:12px}</style>
+{% endblock %}
+{% block content %}
+<div id="map"></div>
+{% endblock %}
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const map=L.map('map').setView([47.6,-122.3],9);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
+
+const colors={A:'#16a34a',B:'#eab308',C:'#9ca3af'};
+const m=v=>v!=null?'$'+v.toLocaleString():'—';
+
+fetch('/api/map/points').then(r=>r.json()).then(pts=>{
+  if(!pts.length){
+    document.getElementById('map').innerHTML='<div class="empty-state" style="padding-top:30vh"><i class="bi bi-geo-alt" style="font-size:3rem"></i><h4>No map data yet</h4><p>Run the pipeline to see parcels on the map.</p></div>';
+    return;
+  }
+  const bounds=[];
+  pts.forEach(p=>{
+    const c=colors[p.tier]||'#9ca3af';
+    const marker=L.circleMarker([p.lat,p.lng],{radius:7,fillColor:c,color:'#fff',weight:2,fillOpacity:.85}).addTo(map);
+    marker.bindPopup(`<strong>${p.address}</strong><br>Tier ${p.tier} · ${p.splits||0} splits<br>Profit: ${m(p.profit)}<br><a href="/candidates?q=${encodeURIComponent(p.address)}">View Details →</a>`);
+    bounds.push([p.lat,p.lng]);
+  });
+  if(bounds.length)map.fitBounds(bounds,{padding:[30,30]});
+});
+</script>
+{% endblock %}

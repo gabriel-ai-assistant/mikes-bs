@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% set active = "leads" %}
+{% block title %}Leads — Mike's Building System{% endblock %}
+{% block head %}
+<style>
+.kanban{display:flex;gap:1rem;overflow-x:auto;padding-bottom:1rem}
+.kanban-col{min-width:260px;flex:1;background:#f1f5f9;border-radius:12px;padding:.75rem}
+.kanban-col h6{font-weight:700;font-size:.85rem;text-transform:uppercase;color:#6b7280;margin-bottom:.75rem}
+.lead-card{background:#fff;border-radius:8px;padding:.75rem;margin-bottom:.5rem;box-shadow:0 1px 2px rgba(0,0,0,.06);cursor:pointer}
+.lead-card:hover{box-shadow:0 2px 8px rgba(0,0,0,.12)}
+.lead-card .name{font-weight:600;font-size:.95rem}
+.lead-card .addr{font-size:.85rem;color:#6b7280}
+.lead-card .contact{font-size:.8rem;color:#9ca3af;margin-top:.25rem}
+</style>
+{% endblock %}
+{% block content %}
+{% set has_any = columns.values()|map('length')|sum > 0 %}
+{% if not has_any %}
+<div class="empty-state"><i class="bi bi-kanban"></i><h4>No leads yet</h4><p>Leads are created from candidates. Run the pipeline first.</p></div>
+{% else %}
+<div class="kanban">
+{% set labels = {'new':'New','reviewed':'Reviewed','outreach':'Outreach','active':'Active','dead':'Dead'} %}
+{% for status in statuses %}
+<div class="kanban-col">
+  <h6>{{ labels.get(status.value, status.value) }} ({{ columns[status]|length }})</h6>
+  {% for lead in columns[status] %}
+  <div class="lead-card" data-bs-toggle="collapse" data-bs-target="#lead-{{ lead.id|string|replace('-','') }}">
+    <div class="d-flex justify-content-between align-items-start">
+      <div class="name">{{ lead.candidate.parcel.owner_name or 'Unknown Owner' }}</div>
+      {% if lead.candidate.score_tier %}
+      <span class="badge badge-{{ lead.candidate.score_tier.value|lower }}">{{ lead.candidate.score_tier.value }}</span>
+      {% endif %}
+    </div>
+    <div class="addr">{{ lead.candidate.parcel.address or 'No address' }}</div>
+    <div class="contact">
+      {% if lead.owner_phone %}📞 {{ lead.owner_phone }}{% endif %}
+      {% if lead.owner_email %}✉️ {{ lead.owner_email }}{% endif %}
+      {% if not lead.owner_phone and not lead.owner_email %}No contact info{% endif %}
+    </div>
+    <div class="collapse mt-2" id="lead-{{ lead.id|string|replace('-','') }}">
+      <hr class="my-2">
+      <p class="mb-1" style="font-size:.85rem"><strong>Notes:</strong> {{ lead.notes or 'None' }}</p>
+      {% if lead.contacted_at %}<p class="mb-1" style="font-size:.85rem"><strong>Last Contact:</strong> {{ lead.contacted_at.strftime('%b %d, %Y') }}</p>{% endif %}
+      {% if lead.outcome %}<p class="mb-1" style="font-size:.85rem"><strong>Outcome:</strong> {{ lead.outcome }}</p>{% endif %}
+      <div class="mt-2">
+        <select class="form-select form-select-sm" onchange="updateStatus('{{ lead.id }}',this.value)">
+          {% for s in statuses %}<option value="{{ s.value }}"{% if lead.status==s %} selected{% endif %}>{{ labels.get(s.value, s.value) }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function updateStatus(id,status){
+  fetch('/api/lead/'+id+'/status?status='+status,{method:'POST'}).then(()=>location.reload());
+}
+</script>
+{% endblock %}

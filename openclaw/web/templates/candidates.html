@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% set active = "candidates" %}
+{% block title %}Candidates — Mike's Building System{% endblock %}
+{% block content %}
+<div class="row mb-3 g-2 align-items-end">
+  <div class="col-md-4">
+    <form method="get" class="input-group">
+      <input type="text" name="q" class="form-control" placeholder="Search address…" value="{{ search }}">
+      <input type="hidden" name="tier" value="{{ tier }}">
+      <input type="hidden" name="county" value="{{ county }}">
+      <input type="hidden" name="sort" value="{{ sort }}">
+      <button class="btn btn-primary">Search</button>
+    </form>
+  </div>
+  <div class="col-auto">
+    <select class="form-select" onchange="location.href='?q={{ search }}&tier='+this.value+'&county={{ county }}&sort={{ sort }}'">
+      <option value="">All Tiers</option>
+      {% for t in ['A','B','C'] %}<option value="{{ t }}"{% if tier==t %} selected{% endif %}>Tier {{ t }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <select class="form-select" onchange="location.href='?q={{ search }}&tier={{ tier }}&county='+this.value+'&sort={{ sort }}'">
+      <option value="">All Counties</option>
+      {% for c in ['king','snohomish','skagit'] %}<option value="{{ c }}"{% if county==c %} selected{% endif %}>{{ c|title }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <select class="form-select" onchange="location.href='?q={{ search }}&tier={{ tier }}&county={{ county }}&sort='+this.value">
+      {% for k,l in [('profit','Profit ↓'),('margin','Margin ↓'),('lot','Lot Size ↓'),('splits','Splits ↓')] %}
+      <option value="{{ k }}"{% if sort==k %} selected{% endif %}>{{ l }}</option>{% endfor %}
+    </select>
+  </div>
+</div>
+
+{% if candidates|length == 0 %}
+<div class="empty-state"><i class="bi bi-search"></i><h4>No candidates found</h4><p>Adjust filters or run the pipeline to generate candidates.</p></div>
+{% else %}
+<div class="table-responsive">
+<table class="table table-hover bg-white" style="border-radius:12px;overflow:hidden">
+<thead class="table-light">
+<tr><th>Tier</th><th>County</th><th>Address</th><th>Lot SF</th><th>Splits</th><th>Est. Profit</th><th>Margin</th></tr>
+</thead>
+<tbody>
+{% for c in candidates %}
+<tr role="button" onclick="showDetail('{{ c.id }}')" style="cursor:pointer">
+  <td><span class="badge badge-{{ c.score_tier.value|lower if c.score_tier else 'c' }}">{{ c.score_tier.value if c.score_tier else '—' }}</span></td>
+  <td>{{ c.parcel.county.value|title if c.parcel.county else '—' }}</td>
+  <td>{{ c.parcel.address or '—' }}</td>
+  <td>{{ "{:,}".format(c.parcel.lot_sf) if c.parcel.lot_sf else '—' }}</td>
+  <td>{{ c.potential_splits or '—' }}</td>
+  <td>{{ c.estimated_profit|money }}</td>
+  <td>{{ c.estimated_margin_pct|pct }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% endif %}
+
+<!-- Detail Modal -->
+<div class="modal fade" id="detailModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
+<div class="modal-header"><h5 class="modal-title">Candidate Details</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+<div class="modal-body" id="detailBody"><div class="text-center p-4"><div class="spinner-border text-primary"></div></div></div>
+</div></div></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const modal = new bootstrap.Modal(document.getElementById('detailModal'));
+function showDetail(id){
+  document.getElementById('detailBody').innerHTML='<div class="text-center p-4"><div class="spinner-border text-primary"></div></div>';
+  modal.show();
+  fetch('/api/candidate/'+id).then(r=>r.json()).then(d=>{
+    if(d.error){document.getElementById('detailBody').innerHTML='<p class="text-danger">Not found</p>';return;}
+    const m=v=>v!=null?'$'+v.toLocaleString():'—';
+    const p=v=>v!=null?v.toFixed(1)+'%':'—';
+    document.getElementById('detailBody').innerHTML=`
+      <div class="row g-3">
+        <div class="col-md-6"><strong>Address:</strong> ${d.address||'—'}</div>
+        <div class="col-md-3"><strong>County:</strong> ${d.county||'—'}</div>
+        <div class="col-md-3"><strong>Tier:</strong> <span class="badge badge-${(d.tier||'c').toLowerCase()}">${d.tier||'—'}</span></div>
+        <div class="col-md-4"><strong>Owner:</strong> ${d.owner_name||'—'}</div>
+        <div class="col-md-4"><strong>Zone:</strong> ${d.zone_code||'—'}</div>
+        <div class="col-md-4"><strong>Lot SF:</strong> ${d.lot_sf?d.lot_sf.toLocaleString():'—'}</div>
+        <div class="col-12"><hr></div>
+        <div class="col-md-4"><strong>Assessed Value:</strong> ${m(d.assessed_value)}</div>
+        <div class="col-md-4"><strong>Land Value:</strong> ${m(d.land_value)}</div>
+        <div class="col-md-4"><strong>Splits:</strong> ${d.splits||'—'}</div>
+        <div class="col-md-4"><strong>Dev Cost:</strong> ${m(d.dev_cost)}</div>
+        <div class="col-md-4"><strong>Build Cost:</strong> ${m(d.build_cost)}</div>
+        <div class="col-md-4"><strong>ARV:</strong> ${m(d.arv)}</div>
+        <div class="col-md-6"><strong>Estimated Profit:</strong> <span class="fs-4 fw-bold text-success">${m(d.profit)}</span></div>
+        <div class="col-md-6"><strong>Margin:</strong> <span class="fs-4 fw-bold">${p(d.margin_pct)}</span></div>
+        <div class="col-12"><hr></div>
+        <div class="col-md-6"><strong>Critical Area Overlap:</strong> ${d.critical_area?'⚠️ Yes':'✅ No'}</div>
+        <div class="col-md-6"><strong>Shoreline Overlap:</strong> ${d.shoreline?'⚠️ Yes':'✅ No'}</div>
+      </div>`;
+  });
+}
+</script>
+{% endblock %}
