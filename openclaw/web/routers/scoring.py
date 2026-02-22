@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, text
 
-from openclaw.analysis.rule_engine import evaluate_candidate, load_rules, rescore_all
+from openclaw.analysis.rule_engine import evaluate_candidate, load_rules, rescore_all, score_candidate
 from openclaw.db.models import Candidate, CandidateFeedback, ScoringRule
 from openclaw.web.common import db
 
@@ -131,6 +131,55 @@ async def submit_feedback(
 @router.get("/api/candidate/{candidate_id}/feedback")
 def get_feedback(candidate_id: str, request: Request, session: Session = Depends(db)):
     return _feedback_summary(session, candidate_id, _actor_key(request))
+
+
+@router.get("/api/candidate/{candidate_id}/score-explanation")
+def score_explanation(candidate_id: str, session: Session = Depends(db)):
+    row = session.execute(text("""
+        SELECT
+            c.id as candidate_id,
+            c.potential_splits,
+            c.has_critical_area_overlap,
+            c.flagged_for_review,
+            c.uga_outside,
+            c.reason_codes,
+            p.present_use, p.owner_name, p.zone_code,
+            p.lot_sf, p.assessed_value, p.improvement_value, p.total_value,
+            p.address, p.county,
+            COALESCE((
+                SELECT
+                    COUNT(*) FILTER (WHERE cf.rating = 'up')
+                    - COUNT(*) FILTER (WHERE cf.rating = 'down')
+                FROM candidate_feedback cf
+                WHERE cf.candidate_id = c.id
+            ), 0) AS vote_net
+        FROM candidates c
+        JOIN parcels p ON c.parcel_id = p.id
+        WHERE c.id = CAST(:candidate_id AS uuid)
+    """), {"candidate_id": candidate_id}).mappings().first()
+
+    if not row:
+        return JSONResponse({"error": "candidate not found"}, status_code=404)
+
+    rules = load_rules(session)
+    scored = score_candidate(dict(row), rules)
+    components = scored["breakdown"]
+
+    return {
+        "candidate_id": candidate_id,
+        "total_score": int(scored["score"]),
+        "tier": scored["tier"],
+        "exclude": bool(scored["exclude"]),
+        "components": {
+            "base": components["base"],
+            "edge_tags": components["edge_tags"],
+            "risk_tags": components["risk_tags"],
+            "dynamic_rules": components["dynamic_rules"],
+            "user_vote_boost": components["user_vote_boost"],
+        },
+        "reason_codes": list(scored["reason_codes"]),
+        "active_rules": len(rules),
+    }
 
 
 @router.get("/api/feedback/stats")
