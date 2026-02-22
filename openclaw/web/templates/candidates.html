@@ -319,6 +319,19 @@ loadTags();
 // ── Original script globals ────────────────────────────────────────────────
 const modal = new bootstrap.Modal(document.getElementById('detailModal'));
 
+// Remove downvoted row when modal is dismissed
+document.getElementById('detailModal').addEventListener('hidden.bs.modal', () => {
+  if (window._lastDownvotedId) {
+    const row = document.querySelector(`tr[data-candidate-id='${window._lastDownvotedId}']`);
+    if (row) {
+      row.style.transition = 'opacity 0.5s';
+      row.style.opacity = '0';
+      setTimeout(() => row.remove(), 500);
+    }
+    window._lastDownvotedId = null;
+  }
+});
+
 let _miniMap = null;
 
 function fmt(v, prefix='$') {
@@ -544,14 +557,11 @@ async function doRating(id, rating, listItemSelector=null) {
   await resp.json();
 
   if (rating === 'down') {
-    const row = document.querySelector(listItemSelector || `tr[data-candidate-id='${id}']`);
-    if (row) {
-      row.style.transition = 'opacity 0.4s';
-      row.style.opacity = '0';
-      setTimeout(() => row.remove(), 400);
-    }
-    try { bootstrap.Modal.getInstance(document.getElementById('detailModal') || document.getElementById('candidateModal'))?.hide(); } catch(e) {}
-    try { bootstrap.Modal.getInstance(document.getElementById('propertyModal'))?.hide(); } catch(e) {}
+    // Store candidate id — row removed when modal closes
+    window._lastDownvotedId = id;
+    const downBtn = document.getElementById('downBtn-'+id);
+    if (downBtn) downBtn.className = 'btn btn-sm btn-danger';
+    // Show reason/note form — modal stays open
     const fbDiv = document.getElementById('fbForm-'+id);
     if (fbDiv) { fbDiv.classList.remove('d-none'); }
   } else {
