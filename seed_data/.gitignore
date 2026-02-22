@@ -1,0 +1,8 @@
+# Large files — stored on Google Drive + aidev01:/home/gabriel/approved_files/
+# See seed_data/README.md for the full inventory
+
+*.geojson
+Contours_*.gpkg
+WA_geopackage_wetlands*
+All_Parcels_*.gpkg
+Parcels_*.gpkg
