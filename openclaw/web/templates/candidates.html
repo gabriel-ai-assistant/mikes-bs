@@ -459,7 +459,7 @@ async function openCandidateModal(id, parcelId='') {
   const tierCls = d.tier==='A'?'bg-success':d.tier==='B'?'bg-primary':d.tier==='C'?'bg-warning text-dark':d.tier==='D'?'':d.tier==='E'?'bg-danger':'bg-dark';
 
   document.getElementById('modalTitle').innerHTML =
-    `<span class="badge ${tierCls} me-2" ${tierStyle}>Tier ${d.tier || '?'}</span>${d.address || 'No address'}`;
+    `<span id="tierBadge-${d.id}" class="badge ${tierCls} me-2" ${tierStyle}>Tier ${d.tier || '?'}</span>${d.address || 'No address'}`;
 
   const tagsHtml = (d.tags || []).map(t =>
     `<span class="badge me-1 mb-1" style="background:#e8f4fd;color:#0d6efd;border:1px solid #bee5fd">${chipText(escHtml(t))}</span>`
@@ -651,7 +651,13 @@ async function doRating(id, rating, listItemSelector=null) {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({feedback_type: rating === 'up' ? 'thumbs_up' : 'thumbs_down'})
   });
-  await resp.json();
+  let data = {};
+  try { data = await resp.json(); } catch(e) {}
+
+  if (!resp.ok || data.error) {
+    alert('Feedback error: ' + (data.error || resp.status));
+    return;
+  }
 
   if (rating === 'down') {
     // Store candidate id — row removed when modal closes
@@ -663,8 +669,36 @@ async function doRating(id, rating, listItemSelector=null) {
     if (fbDiv) { fbDiv.classList.remove('d-none'); }
   } else {
     const upBtn = document.getElementById('upBtn-'+id);
-    if (upBtn) upBtn.className = 'btn btn-sm btn-success';
+    if (upBtn) { upBtn.className = 'btn btn-sm btn-success'; upBtn.innerHTML = '👍 Saved! ✓'; }
+    // Update tier badge in modal if tier changed
+    if (data.new_tier) {
+      const tierBadge = document.getElementById('tierBadge-'+id);
+      if (tierBadge) {
+        const tierColors = {A:'success',B:'primary',C:'warning',D:'warning text-dark',E:'danger',F:'secondary'};
+        const c = tierColors[data.new_tier] || 'secondary';
+        tierBadge.className = `badge bg-${c} fs-6`;
+        tierBadge.textContent = 'Tier ' + data.new_tier;
+      }
+    }
+    // Show a quick toast
+    showToast('👍 Flagged as good deal — Tier ' + (data.new_tier || '?'), 'success');
   }
+}
+
+function showToast(msg, type='info') {
+  let container = document.getElementById('toastContainer');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toastContainer';
+    container.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:9999;display:flex;flex-direction:column;gap:.5rem';
+    document.body.appendChild(container);
+  }
+  const t = document.createElement('div');
+  t.className = `alert alert-${type} shadow py-2 px-3 mb-0`;
+  t.style.cssText = 'min-width:220px;font-size:.9rem';
+  t.textContent = msg;
+  container.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
 }
 
 async function submitNegFeedback(id) {

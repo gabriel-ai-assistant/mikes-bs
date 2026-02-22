@@ -386,15 +386,15 @@ async def submit_feedback(
     from sqlalchemy import text as sqlt
 
     def tier_for_score(score: int) -> ScoreTierEnum:
-        if score >= 85:
+        if score >= 72:
             return ScoreTierEnum.A
-        if score >= 70:
+        if score >= 58:
             return ScoreTierEnum.B
-        if score >= 50:
+        if score >= 44:
             return ScoreTierEnum.C
-        if score >= 35:
+        if score >= 30:
             return ScoreTierEnum.D
-        if score >= 20:
+        if score >= 16:
             return ScoreTierEnum.E
         return ScoreTierEnum.F
 
@@ -434,6 +434,11 @@ async def submit_feedback(
     current_score = int(candidate.score or 0)
     if feedback_type == "thumbs_down":
         current_score = max(0, current_score - 40)
+        candidate.score = current_score
+        candidate.score_tier = tier_for_score(current_score)
+    elif feedback_type == "thumbs_up":
+        # Manual override: boost score to at least 90 (Tier A) — human says it's a deal
+        current_score = max(90, current_score + 40)
         candidate.score = current_score
         candidate.score_tier = tier_for_score(current_score)
 
