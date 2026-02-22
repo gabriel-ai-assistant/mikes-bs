@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -12,6 +14,59 @@ from openclaw.db.models import Candidate, CandidateFeedback, ScoringRule
 from openclaw.web.common import db
 
 router = APIRouter()
+VOTE_META_PREFIX = "__vote_meta__:"
+
+
+def _actor_key(request: Request) -> str:
+    user_id = request.cookies.get("user_id")
+    if user_id:
+        return f"user:{user_id}"
+    host = request.client.host if request.client else "unknown"
+    return f"anon:{host}"
+
+
+def _vote_note_with_meta(actor: str, notes: str | None = None) -> str:
+    payload = json.dumps({"actor": actor}, separators=(",", ":"))
+    if notes:
+        return f"{VOTE_META_PREFIX}{payload}\n{notes}"
+    return f"{VOTE_META_PREFIX}{payload}"
+
+
+def _extract_actor(note: str | None) -> str | None:
+    if not note or not note.startswith(VOTE_META_PREFIX):
+        return None
+    body = note[len(VOTE_META_PREFIX):].splitlines()[0].strip()
+    if not body:
+        return None
+    try:
+        parsed = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    actor = parsed.get("actor")
+    return str(actor) if actor else None
+
+
+def _feedback_summary(session: Session, candidate_id: str, actor_key: str | None = None) -> dict:
+    rows = session.query(
+        CandidateFeedback.rating,
+        CandidateFeedback.notes,
+    ).filter(CandidateFeedback.candidate_id == candidate_id).all()
+    thumbs_up = 0
+    thumbs_down = 0
+    user_vote = None
+    for rating, notes in rows:
+        if rating == "up":
+            thumbs_up += 1
+        elif rating == "down":
+            thumbs_down += 1
+        if actor_key and _extract_actor(notes) == actor_key:
+            user_vote = rating
+    return {
+        "thumbs_up": thumbs_up,
+        "thumbs_down": thumbs_down,
+        "net_votes": thumbs_up - thumbs_down,
+        "user_vote": user_vote,
+    }
 
 
 @router.post("/api/candidate/{candidate_id}/feedback")
@@ -40,34 +95,42 @@ async def submit_feedback(
     category_value = (payload.get("category") or category or "").strip()
     notes_value = (payload.get("notes") or notes or "").strip()
 
-    session.add(CandidateFeedback(
-        candidate_id=candidate_id,
-        rating=rating_value,
-        category=category_value or None,
-        notes=notes_value or None,
-    ))
-
     candidate = session.query(Candidate).filter(Candidate.id == candidate_id).first()
     if not candidate:
         session.rollback()
         return JSONResponse({"error": "candidate not found"}, status_code=404)
 
-    current_score = int(candidate.score or 0)
-    tier = candidate.score_tier.value if candidate.score_tier else None
+    actor_key = _actor_key(request)
+    existing_votes = session.query(CandidateFeedback).filter(CandidateFeedback.candidate_id == candidate_id).all()
+    actor_votes = [vote for vote in existing_votes if _extract_actor(vote.notes) == actor_key]
+
+    # One active vote per actor+candidate. Same vote toggles off; opposite vote replaces.
+    should_toggle_off = any(v.rating == rating_value for v in actor_votes)
+    for vote in actor_votes:
+        session.delete(vote)
+
+    if not should_toggle_off:
+        session.add(CandidateFeedback(
+            candidate_id=candidate_id,
+            rating=rating_value,
+            category=category_value or None,
+            notes=_vote_note_with_meta(actor_key, notes_value or None),
+        ))
+
     session.commit()
-    return {"ok": True, "new_score": current_score, "new_tier": tier}
+    summary = _feedback_summary(session, candidate_id, actor_key)
+    return {
+        "ok": True,
+        "active": summary["user_vote"],
+        "score": int(candidate.score or 0),
+        "tier": candidate.score_tier.value if candidate.score_tier else None,
+        **summary,
+    }
 
 
 @router.get("/api/candidate/{candidate_id}/feedback")
-def get_feedback(candidate_id: str, session: Session = Depends(db)):
-    row = session.query(
-        func.count(CandidateFeedback.id).filter(CandidateFeedback.rating == "up").label("thumbs_up"),
-        func.count(CandidateFeedback.id).filter(CandidateFeedback.rating == "down").label("thumbs_down"),
-    ).filter(CandidateFeedback.candidate_id == candidate_id).first()
-    return {
-        "thumbs_up": int(row.thumbs_up or 0),
-        "thumbs_down": int(row.thumbs_down or 0),
-    }
+def get_feedback(candidate_id: str, request: Request, session: Session = Depends(db)):
+    return _feedback_summary(session, candidate_id, _actor_key(request))
 
 
 @router.get("/api/feedback/stats")

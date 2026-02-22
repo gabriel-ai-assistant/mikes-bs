@@ -10,188 +10,248 @@
   'EDGE_ARBITRAGE_DEPTH_HIGH': 'Deep Arbitrage 🎯'
 } %}
 
-<!-- Filters -->
+<style>
+  .vote-btn {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+  }
+  .filter-chip {
+    border: 1px solid #dee2e6;
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: 0.78rem;
+    background: #f8f9fa;
+  }
+  .column-chooser {
+    min-width: 320px;
+    max-width: 380px;
+  }
+  @media (max-width: 767px) {
+    .column-chooser {
+      display: none;
+    }
+  }
+</style>
+
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-body py-2">
     <form method="get" id="filterForm" class="row g-2 align-items-end">
-      <div class="col-12 col-md-4">
-        <input type="text" name="q" class="form-control" placeholder="Search address or owner name…" value="{{ search }}">
+      <input type="hidden" name="page" id="pageInput" value="{{ filters.page }}">
+      <div class="col-12 col-lg-4">
+        <label class="form-label small mb-1">Search</label>
+        <input type="text" name="q" class="form-control" placeholder="Search display text..." value="{{ filters.q }}">
       </div>
-      <div class="col-6 col-md-2">
-        <select name="tier" class="form-select">
-          <option value="">All Tiers</option>
-          <option value="A" {% if tier=='A' %}selected{% endif %}>🏆 Tier A</option>
-          <option value="B" {% if tier=='B' %}selected{% endif %}>✅ Tier B</option>
-          <option value="C" {% if tier=='C' %}selected{% endif %}>⬜ Tier C</option>
-          <option value="D" {% if tier=='D' %}selected{% endif %}>🟠 Tier D</option>
-          <option value="E" {% if tier=='E' %}selected{% endif %}>🔴 Tier E</option>
-          <option value="F" {% if tier=='F' %}selected{% endif %}>⚫ Tier F</option>
-        </select>
-      </div>
-      <div class="col-12 col-md-3">
-        <select name="use_type" id="useTypeSelect" class="form-select">
-          <option value="">All Use Types</option>
-        </select>
-      </div>
-      <div class="col-6 col-md-2">
+      <div class="col-6 col-lg-2">
+        <label class="form-label small mb-1">Sort</label>
         <select name="sort" class="form-select">
-          <option value="splits" {% if sort=='splits' %}selected{% endif %}>Most Splits</option>
-          <option value="lot" {% if sort=='lot' %}selected{% endif %}>Largest Lot</option>
-          <option value="value" {% if sort=='value' %}selected{% endif %}>Highest Value</option>
+          <option value="score_desc" {% if filters.sort=='score_desc' %}selected{% endif %}>Score ↓</option>
+          <option value="score_asc" {% if filters.sort=='score_asc' %}selected{% endif %}>Score ↑</option>
+          <option value="splits" {% if filters.sort=='splits' %}selected{% endif %}>Splits ↓</option>
+          <option value="lot" {% if filters.sort=='lot' %}selected{% endif %}>Lot SF ↓</option>
+          <option value="value" {% if filters.sort=='value' %}selected{% endif %}>Assessed Value ↓</option>
+          <option value="address_asc" {% if filters.sort=='address_asc' %}selected{% endif %}>Address A-Z</option>
         </select>
       </div>
-      <div class="col-6 col-md-2">
-        <div class="form-check form-switch pt-2">
-          <input class="form-check-input" type="checkbox" name="ag" value="1" id="agCheck" {% if ag=='1' %}checked{% endif %}>
-          <label class="form-check-label small" for="agCheck">Ag Zone Only</label>
+      <div class="col-6 col-lg-2">
+        <label class="form-label small mb-1">Rows</label>
+        <select name="limit" class="form-select">
+          {% for n in [25, 50, 100, 250, 500] %}
+          <option value="{{ n }}" {% if filters.limit==n %}selected{% endif %}>{{ n }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-lg-4 d-flex gap-2 justify-content-lg-end">
+        <button type="button" class="btn btn-sm btn-outline-primary" onclick="applyPreset('tier_a')">Tier A</button>
+        <button type="button" class="btn btn-sm btn-outline-primary" onclick="applyPreset('voted_up')">Voted Up</button>
+        <button type="button" class="btn btn-sm btn-outline-primary" onclick="applyPreset('has_bundle')">Has Bundle</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary d-md-none" data-bs-toggle="collapse" data-bs-target="#filterDrawer">Filters</button>
+      </div>
+
+      <div class="collapse show d-md-block col-12" id="filterDrawer">
+        <div class="row g-2 mt-1">
+          <div class="col-12 col-md-2">
+            <label class="form-label small mb-1">Tiers</label>
+            <select name="tiers" id="tiersSelect" class="form-select" multiple size="4">
+              {% for t in ['A','B','C','D','E','F'] %}
+              <option value="{{ t }}" {% if t in filters.tiers %}selected{% endif %}>Tier {{ t }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-3">
+            <label class="form-label small mb-1">Use Types</label>
+            <select name="use_types" id="useTypeSelect" class="form-select" multiple size="4"></select>
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label small mb-1">Tags Any</label>
+            <input type="text" name="tags_any" class="form-control" placeholder="EDGE_X,RISK_Y" value="{{ filters.tags_any|join(',') }}">
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label small mb-1">Tags None</label>
+            <input type="text" name="tags_none" class="form-control" placeholder="EDGE_X,RISK_Y" value="{{ filters.tags_none|join(',') }}">
+          </div>
+          <div class="col-6 col-md-1">
+            <label class="form-label small mb-1">Score Min</label>
+            <input type="number" name="score_min" class="form-control" value="{{ filters.score_min if filters.score_min is not none else '' }}">
+          </div>
+          <div class="col-6 col-md-1">
+            <label class="form-label small mb-1">Score Max</label>
+            <input type="number" name="score_max" class="form-control" value="{{ filters.score_max if filters.score_max is not none else '' }}">
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Vote</label>
+            <select name="vote" class="form-select">
+              <option value="" {% if not filters.vote %}selected{% endif %}>Any</option>
+              <option value="up" {% if filters.vote=='up' %}selected{% endif %}>Voted Up</option>
+              <option value="down" {% if filters.vote=='down' %}selected{% endif %}>Voted Down</option>
+              <option value="none" {% if filters.vote=='none' %}selected{% endif %}>No Votes</option>
+            </select>
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Lead Status</label>
+            <select name="lead_status" class="form-select">
+              <option value="" {% if not filters.lead_status %}selected{% endif %}>Any</option>
+              {% for s in ['new','researching','contacted','negotiating','closed_won','closed_lost','dead'] %}
+              <option value="{{ s }}" {% if filters.lead_status==s %}selected{% endif %}>{{ s }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Has Bundle</label>
+            <select name="has_bundle" class="form-select">
+              <option value="" {% if filters.has_bundle is none %}selected{% endif %}>Any</option>
+              <option value="1" {% if filters.has_bundle is sameas true %}selected{% endif %}>Yes</option>
+              <option value="0" {% if filters.has_bundle is sameas false %}selected{% endif %}>No</option>
+            </select>
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">OSINT Status</label>
+            <input type="text" name="osint_status" class="form-control" value="{{ filters.osint_status or '' }}" placeholder="pending/complete">
+          </div>
         </div>
       </div>
-      <div class="col-6 col-md-2">
-        <button type="submit" class="btn btn-primary w-100">Filter</button>
+
+      <div class="col-12 d-flex gap-2 justify-content-end">
+        <a href="{{ base_url }}/candidates" class="btn btn-outline-secondary">Clear all</a>
+        <button type="submit" class="btn btn-primary">Apply filters</button>
       </div>
-      <!-- Hidden inputs for tag filter (managed by JS below) -->
-      <input type="hidden" name="tags" id="hiddenTags" value="{{ tags }}">
-      <input type="hidden" name="tags_mode" id="hiddenTagsMode" value="{{ tags_mode }}">
     </form>
-  </div>
-</div>
-
-<!-- Tag / Flags Filter Bar -->
-<div class="card border-0 shadow-sm mb-3" id="tagFilterCard">
-  <div class="card-body py-2">
-    <div class="d-flex align-items-center gap-2 flex-wrap">
-      <span class="fw-semibold small text-muted text-uppercase" style="letter-spacing:.04em">🏷️ Flags</span>
-
-      <!-- Tag dropdown trigger -->
-      <div class="dropdown" id="tagDropdownWrapper">
-        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="tagDropdownBtn" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
-          <span id="tagDropdownLabel">Select tags…</span>
-        </button>
-        <div class="dropdown-menu p-2 shadow" style="min-width:280px;max-height:320px;overflow-y:auto" id="tagDropdownMenu">
-          <div class="text-muted small text-center py-2" id="tagLoadingMsg">Loading…</div>
-        </div>
-      </div>
-
-      <!-- Match mode toggle -->
-      <div class="btn-group btn-group-sm" role="group" id="matchModeGroup">
-        <input type="radio" class="btn-check" name="matchMode" id="modeAny" autocomplete="off" checked>
-        <label class="btn btn-outline-secondary" for="modeAny">Match ANY</label>
-        <input type="radio" class="btn-check" name="matchMode" id="modeAll" autocomplete="off">
-        <label class="btn btn-outline-secondary" for="modeAll">Match ALL</label>
-      </div>
-
-      <!-- Apply / Clear -->
-      <button class="btn btn-sm btn-primary" id="applyTagsBtn" onclick="applyTagFilter()">Apply</button>
-      <button class="btn btn-sm btn-outline-secondary" id="clearTagsBtn" onclick="clearTagFilter()">Clear</button>
-    </div>
-
-    <!-- Active filter chips -->
-    <div id="activeTagChips" class="mt-2 d-flex flex-wrap gap-1"></div>
+    <div class="mt-2 d-flex flex-wrap gap-1" id="activeFilterChips"></div>
   </div>
 </div>
 
 <div class="d-flex justify-content-between align-items-center mb-2">
-  <span class="text-muted small" id="resultCount">Showing <strong>{{ candidates|length }}</strong> results</span>
-  <a href="{{ base_url }}/map" class="btn btn-sm btn-outline-secondary">🗺️ View on Map</a>
+  <span class="text-muted small" id="resultCount">Showing <strong>{{ rows|length }}</strong> results</span>
+  <div class="d-flex align-items-center gap-2 position-relative">
+    <a href="{{ base_url }}/map" class="btn btn-sm btn-outline-secondary">🗺️ View on Map</a>
+    <button class="btn btn-sm btn-outline-secondary" id="columnGearBtn" type="button" aria-label="Columns">⚙️ Columns</button>
+    <div class="card border-0 shadow-sm p-2 position-absolute column-chooser" id="columnChooserPanel" style="display:none;right:0;top:42px;z-index:1000;"></div>
+  </div>
 </div>
 
-<!-- Table -->
 <div class="card border-0 shadow-sm">
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0" id="candidateTable">
       <thead class="table-dark">
         <tr>
-          <th>Tier</th>
-          <th>Address</th>
-          <th>Owner</th>
-          <th>Owner Mailing</th>
-          <th>Lot Size</th>
-          <th>Zone</th>
-          <th>Splits</th>
-          <th>Land Value</th>
-          <th>Flags</th>
-          <th>Use Type</th>
-          <th></th>
+          <th data-col="address">Address</th>
+          <th data-col="score">Score</th>
+          <th data-col="score_tier">Tier</th>
+          <th data-col="vote">Vote</th>
+          <th data-col="potential_splits">Splits</th>
+          <th data-col="lot_sf">Lot SF</th>
+          <th data-col="zone_code">Zone</th>
+          <th data-col="subdivision_feasibility">Feasibility</th>
+          <th data-col="economic_margin_pct">Margin %</th>
+          <th data-col="tags">Tags</th>
+          <th data-col="lead_status">Lead Status</th>
+          <th data-col="has_bundle">Bundle</th>
+          <th data-col="osint_status">OSINT</th>
         </tr>
       </thead>
       <tbody>
-        {% for c in candidates %}
+        {% for row in rows %}
+        {% set c = row.candidate %}
         {% set p = c.parcel %}
-        <tr data-candidate-id='{{ c.id }}' data-parcel-id='{{ p.id }}' style="cursor:pointer" onclick="openCandidateModal('{{ c.id }}', '{{ p.id }}')" title="Click to view details">
-          <td>
+        {% set cid = c.id|string %}
+        <tr data-candidate-id="{{ cid }}" data-user-vote="{{ row.user_vote or '' }}">
+          <td data-col="address" class="fw-semibold">
+            <button class="btn btn-link p-0 text-start fw-semibold" onclick="openCandidateModal('{{ cid }}', '{{ p.id }}')">{{ p.address or "—" }}</button>
+            <div class="small text-muted">{{ p.owner_name or "—" }}</div>
+          </td>
+          <td data-col="score">{{ c.score if c.score is not none else "—" }}</td>
+          <td data-col="score_tier">
             {% if c.score_tier and c.score_tier.value == 'A' %}
-              <span class="badge bg-success fs-6">A</span>
+              <span class="badge bg-success">A</span>
             {% elif c.score_tier and c.score_tier.value == 'B' %}
-              <span class="badge bg-primary fs-6">B</span>
+              <span class="badge bg-primary">B</span>
             {% elif c.score_tier and c.score_tier.value == 'C' %}
-              <span class="badge bg-warning text-dark fs-6">C</span>
+              <span class="badge bg-warning text-dark">C</span>
             {% elif c.score_tier and c.score_tier.value == 'D' %}
-              <span class="badge fs-6 text-white" style="background:#fd7e14">D</span>
+              <span class="badge text-white" style="background:#fd7e14">D</span>
             {% elif c.score_tier and c.score_tier.value == 'E' %}
-              <span class="badge bg-danger fs-6">E</span>
+              <span class="badge bg-danger">E</span>
             {% elif c.score_tier and c.score_tier.value == 'F' %}
-              <span class="badge bg-dark fs-6">F</span>
+              <span class="badge bg-dark">F</span>
             {% else %}
-              <span class="badge bg-secondary fs-6">?</span>
+              <span class="badge bg-secondary">?</span>
             {% endif %}
           </td>
-          <td class="fw-semibold">{{ p.address or "—" }}</td>
-          <td>{{ p.owner_name or "—" }}</td>
-          <td class="text-muted small">{{ p.owner_address or "—" }}</td>
-          <td class="small text-nowrap">
-            {{ p.lot_sf | sqft }}<br>
-            <span class="text-muted">{{ p.lot_sf | acres }}</span>
+          <td data-col="vote">
+            <div class="d-flex gap-1">
+              <button id="row-up-{{ cid }}" class="btn btn-sm vote-btn {% if row.user_vote=='up' %}btn-success{% else %}btn-outline-success{% endif %}" onclick="event.stopPropagation(); doRating('{{ cid }}','up')">👍 <span id="row-up-count-{{ cid }}">{{ row.thumbs_up }}</span></button>
+              <button id="row-down-{{ cid }}" class="btn btn-sm vote-btn {% if row.user_vote=='down' %}btn-danger{% else %}btn-outline-danger{% endif %}" onclick="event.stopPropagation(); doRating('{{ cid }}','down')">👎 <span id="row-down-count-{{ cid }}">{{ row.thumbs_down }}</span></button>
+            </div>
           </td>
-          <td class="small">
-            <span class="badge bg-light text-dark border">{{ p.zone_code or "—" }}</span>
-            {% if p.zone_code and zone_labels.get(p.zone_code) %}
-            <div class="text-muted" style="font-size:0.7rem">{{ zone_labels[p.zone_code] | truncate(30) }}</div>
-            {% endif %}
+          <td data-col="potential_splits">{{ c.potential_splits if c.potential_splits is not none else '—' }}</td>
+          <td data-col="lot_sf">
+            {{ p.lot_sf | sqft if p.lot_sf else '—' }}
           </td>
-          <td class="text-center">
-            <div class="fw-bold fs-5">{{ c.potential_splits or "—" }}</div>
-            {% if c.splits_min is not none and c.splits_max is not none %}
-            <div class="small text-muted">{{ c.splits_min }}-{{ c.splits_max }}</div>
-            {% endif %}
-            {% if c.splits_confidence %}
-            <span class="badge {% if c.splits_confidence == 'HIGH' %}conf-badge-high{% elif c.splits_confidence == 'MEDIUM' %}conf-badge-medium{% else %}conf-badge-low{% endif %}">
-              {{ c.splits_confidence }}
-            </span>
-            {% endif %}
+          <td data-col="zone_code">
+            <span class="badge bg-light text-dark border">{{ p.zone_code or '—' }}</span>
           </td>
-          <td class="small">{{ c.estimated_land_value | money }}</td>
-          <td class="small">
+          <td data-col="subdivision_feasibility">
             {% set feas_score = feasibility_scores.get(c.parcel_id|string) if feasibility_scores else None %}
-            {% if feas_score is not none %}<span class="badge bg-info text-dark" title="Subdivision feasibility score">Feas {{ "%.0f"|format(feas_score) }}</span>{% endif %}
-            {% if c.has_critical_area_overlap %}<span class="badge bg-danger" title="Wetland overlap">🌿 Wetland</span>{% endif %}
-            {% if c.flagged_for_review %}<span class="badge bg-warning text-dark" title="Ag notification zone">🚜 Ag Zone</span>{% endif %}
-            {% for t in c.tags or [] %}
-              {% if chip_map.get(t) %}<span class="badge bg-secondary">{{ chip_map[t] }}</span>{% endif %}
-            {% endfor %}
-            {% for t in c.subdivision_flags or [] %}
-              {% if chip_map.get(t) %}<span class="badge bg-secondary">{{ chip_map[t] }}</span>{% endif %}
-            {% endfor %}
-          </td>
-          <td class="small" title="{{ p.present_use or '' }}">
-            {% if p.present_use %}
-              {{ p.present_use | truncate(30, True, '...') }}
+            {% if feas_score is not none %}
+              <span class="badge bg-info text-dark">{{ '%.0f'|format(feas_score) }}</span>
             {% else %}
               —
             {% endif %}
           </td>
-          <td>
-            <div class="d-flex gap-1">
-              <button class="btn btn-sm btn-outline-primary py-0"
-                      onclick="event.stopPropagation(); openCandidateModal('{{ c.id }}', '{{ p.id }}')" title="Details">Details</button>
-            </div>
+          <td data-col="economic_margin_pct">
+            {% if c.economic_margin_pct is not none %}{{ '%.1f'|format(c.economic_margin_pct * 100) }}%{% else %}—{% endif %}
           </td>
+          <td data-col="tags" class="small">
+            {% for t in c.tags or [] %}
+              {% if chip_map.get(t) %}<span class="badge bg-secondary">{{ chip_map[t] }}</span>{% endif %}
+            {% endfor %}
+            {% if not c.tags %}—{% endif %}
+          </td>
+          <td data-col="lead_status">{{ row.lead_status or '—' }}</td>
+          <td data-col="has_bundle">{{ 'Yes' if row.has_bundle else 'No' }}</td>
+          <td data-col="osint_status">{{ row.osint_status or '—' }}</td>
         </tr>
         {% endfor %}
-        {% if not candidates %}
-        <tr><td colspan="11" class="text-center text-muted py-4">No candidates match your filters.</td></tr>
+        {% if not rows %}
+        <tr><td colspan="13" class="text-center text-muted py-4">No candidates match your filters.</td></tr>
         {% endif %}
       </tbody>
     </table>
+  </div>
+</div>
+
+<div class="modal fade" id="columnChooserModal" tabindex="-1">
+  <div class="modal-dialog modal-fullscreen-sm-down">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Choose Columns</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="columnChooserModalBody"></div>
+    </div>
   </div>
 </div>
 
@@ -216,197 +276,261 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9/dist/leaflet.js"></script>
 <script>
-
-// ── Tag Filter Logic ──────────────────────────────────────────────────────
 const BASE = "{{ base_url }}";
+const CURRENT_FILTERS = {{ filters | tojson }};
+const CURRENT_USE_TYPES = {{ filters.use_types | tojson }};
 
-// Parse current tags from server-rendered value
-let _selectedTags = new Set(
-  "{{ tags }}".split(",").map(t => t.trim()).filter(t => t.length > 0)
-);
-let _allTagData = [];
-const _currentUseType = {{ (use_type or "") | tojson }};
+const COLUMN_REGISTRY = [
+  { key: "address", label: "Address", default: true, order: 0, sortable: true },
+  { key: "score", label: "Score", default: true, order: 1, sortable: true },
+  { key: "score_tier", label: "Tier", default: true, order: 2, sortable: true },
+  { key: "vote", label: "Vote", default: true, order: 3, sortable: false },
+  { key: "potential_splits", label: "Splits", default: true, order: 4, sortable: true },
+  { key: "lot_sf", label: "Lot SF", default: false, order: 5, sortable: true },
+  { key: "zone_code", label: "Zone", default: false, order: 6, sortable: true },
+  { key: "subdivision_feasibility", label: "Feasibility", default: false, order: 7, sortable: true },
+  { key: "economic_margin_pct", label: "Margin %", default: false, order: 8, sortable: true },
+  { key: "tags", label: "Tags", default: false, order: 9, sortable: false },
+  { key: "lead_status", label: "Lead Status", default: false, order: 10, sortable: true },
+  { key: "has_bundle", label: "Bundle", default: false, order: 11, sortable: true },
+  { key: "osint_status", label: "OSINT", default: false, order: 12, sortable: true },
+];
 
-function tagColor(tag) {
-  if (tag.startsWith('EDGE_')) return {bg:'#d1fae5',text:'#065f46',border:'#6ee7b7'};
-  if (tag.startsWith('RISK_')) return {bg:'#fee2e2',text:'#991b1b',border:'#fca5a5'};
-  return {bg:'#f3f4f6',text:'#374151',border:'#d1d5db'};
+const COLUMN_STORAGE_KEY = "column_config";
+let _miniMap = null;
+const modal = new bootstrap.Modal(document.getElementById('detailModal'));
+const columnModal = new bootstrap.Modal(document.getElementById('columnChooserModal'));
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function renderChips() {
-  const container = document.getElementById('activeTagChips');
+function defaultColumnConfig() {
+  return {
+    order: [...COLUMN_REGISTRY].sort((a, b) => a.order - b.order).map((c) => c.key),
+    visible: Object.fromEntries(COLUMN_REGISTRY.map((c) => [c.key, !!c.default])),
+  };
+}
+
+function loadColumnConfig() {
+  const fallback = defaultColumnConfig();
+  try {
+    const raw = localStorage.getItem(COLUMN_STORAGE_KEY);
+    if (!raw) return fallback;
+    const saved = JSON.parse(raw);
+    const merged = defaultColumnConfig();
+    if (Array.isArray(saved.order)) {
+      const seen = new Set();
+      merged.order = saved.order.filter((k) => COLUMN_REGISTRY.some((c) => c.key === k) && !seen.has(k) && seen.add(k));
+      COLUMN_REGISTRY.forEach((c) => {
+        if (!merged.order.includes(c.key)) merged.order.push(c.key);
+      });
+    }
+    if (saved.visible && typeof saved.visible === 'object') {
+      for (const col of COLUMN_REGISTRY) {
+        if (Object.prototype.hasOwnProperty.call(saved.visible, col.key)) {
+          merged.visible[col.key] = !!saved.visible[col.key];
+        }
+      }
+    }
+    return merged;
+  } catch (e) {
+    return fallback;
+  }
+}
+
+function saveColumnConfig(config) {
+  localStorage.setItem(COLUMN_STORAGE_KEY, JSON.stringify(config));
+}
+
+function applyColumnConfig(config) {
+  const table = document.getElementById('candidateTable');
+  if (!table) return;
+  const headRow = table.querySelector('thead tr');
+  const bodyRows = Array.from(table.querySelectorAll('tbody tr'));
+
+  config.order.forEach((key) => {
+    const th = headRow.querySelector(`th[data-col="${key}"]`);
+    if (th) headRow.appendChild(th);
+    bodyRows.forEach((row) => {
+      const td = row.querySelector(`td[data-col="${key}"]`);
+      if (td) row.appendChild(td);
+    });
+  });
+
+  for (const col of COLUMN_REGISTRY) {
+    const visible = !!config.visible[col.key];
+    const display = visible ? '' : 'none';
+    const th = headRow.querySelector(`th[data-col="${col.key}"]`);
+    if (th) th.style.display = display;
+    bodyRows.forEach((row) => {
+      const td = row.querySelector(`td[data-col="${col.key}"]`);
+      if (td) td.style.display = display;
+    });
+  }
+}
+
+function moveColumn(config, key, direction) {
+  const idx = config.order.indexOf(key);
+  if (idx < 0) return;
+  const next = idx + direction;
+  if (next < 0 || next >= config.order.length) return;
+  const tmp = config.order[idx];
+  config.order[idx] = config.order[next];
+  config.order[next] = tmp;
+}
+
+function renderColumnControls(container, config) {
   if (!container) return;
   container.innerHTML = '';
-  _selectedTags.forEach(tag => {
-    const c = tagColor(tag);
-    const chip = document.createElement('span');
-    chip.className = 'badge d-inline-flex align-items-center gap-1 px-2 py-1';
-    chip.style.cssText = `background:${c.bg};color:${c.text};border:1px solid ${c.border};font-size:.75rem;cursor:default`;
-    chip.innerHTML = `${escHtml(tag)} <button type="button" class="btn-close" style="font-size:.5rem;filter:none" aria-label="Remove" onclick="removeTag('${escHtml(tag)}')"></button>`;
-    container.appendChild(chip);
+  const list = document.createElement('div');
+  list.className = 'd-flex flex-column gap-1';
+
+  config.order.forEach((key) => {
+    const col = COLUMN_REGISTRY.find((c) => c.key === key);
+    if (!col) return;
+    const row = document.createElement('div');
+    row.className = 'd-flex align-items-center justify-content-between gap-2 border rounded px-2 py-1';
+    row.innerHTML = `
+      <label class="form-check m-0 d-flex align-items-center gap-2 flex-grow-1">
+        <input class="form-check-input" type="checkbox" ${config.visible[key] ? 'checked' : ''} data-col-check="${key}">
+        <span class="small">${escHtml(col.label)}</span>
+      </label>
+      <div class="btn-group btn-group-sm">
+        <button type="button" class="btn btn-outline-secondary" data-col-up="${key}">↑</button>
+        <button type="button" class="btn btn-outline-secondary" data-col-down="${key}">↓</button>
+      </div>`;
+    list.appendChild(row);
   });
-  // Update dropdown label
-  const btn = document.getElementById('tagDropdownLabel');
-  if (btn) btn.textContent = _selectedTags.size > 0 ? `${_selectedTags.size} tag(s) selected` : 'Select tags\u2026';
-}
 
-function removeTag(tag) {
-  _selectedTags.delete(tag);
-  renderChips();
-  renderDropdownItems();
-}
+  const footer = document.createElement('div');
+  footer.className = 'd-flex justify-content-between mt-2';
+  footer.innerHTML = `
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="resetColumnsBtn">Reset to defaults</button>
+    <button type="button" class="btn btn-sm btn-primary" id="closeColumnsBtn">Done</button>`;
 
-function renderDropdownItems() {
-  const menu = document.getElementById('tagDropdownMenu');
-  if (!menu) return;
-  menu.innerHTML = '';
-  if (_allTagData.length === 0) {
-    menu.innerHTML = '<div class="text-muted small text-center py-2">No tags available</div>';
-    return;
-  }
-  const groups = [
-    { prefix: 'EDGE_', label: 'EDGE tags', color: 'text-success' },
-    { prefix: 'RISK_', label: 'RISK tags', color: 'text-danger' },
-    { prefix: '',      label: 'Other tags', color: 'text-secondary' },
-  ];
-  let rendered = new Set();
-  groups.forEach(({prefix, label, color}) => {
-    const items = _allTagData.filter(t =>
-      prefix ? t.tag.startsWith(prefix)
-             : !t.tag.startsWith('EDGE_') && !t.tag.startsWith('RISK_')
-    );
-    if (items.length === 0) return;
-    const hdr = document.createElement('div');
-    hdr.className = `dropdown-header small fw-bold ${color} py-1`;
-    hdr.textContent = label;
-    menu.appendChild(hdr);
-    items.forEach(({tag, count}) => {
-      if (rendered.has(tag)) return;
-      rendered.add(tag);
-      const item = document.createElement('label');
-      item.className = 'd-flex align-items-center gap-2 px-2 py-1 rounded';
-      item.style.cssText = 'cursor:pointer;font-size:.82rem';
-      item.onmouseenter = () => item.style.background = '#f8f9fa';
-      item.onmouseleave = () => item.style.background = '';
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.value = tag;
-      cb.checked = _selectedTags.has(tag);
-      cb.className = 'form-check-input me-1';
-      cb.addEventListener('change', () => {
-        if (cb.checked) _selectedTags.add(tag);
-        else _selectedTags.delete(tag);
-        renderChips();
-      });
-      const tagSpan = document.createElement('span');
-      const c = tagColor(tag);
-      tagSpan.innerHTML = `<span class="badge" style="background:${c.bg};color:${c.text};border:1px solid ${c.border};font-size:.72rem">${escHtml(tag)}</span>`;
-      const cntSpan = document.createElement('span');
-      cntSpan.className = 'text-muted ms-auto';
-      cntSpan.style.fontSize = '.75rem';
-      cntSpan.textContent = count.toLocaleString();
-      item.appendChild(cb);
-      item.appendChild(tagSpan);
-      item.appendChild(cntSpan);
-      menu.appendChild(item);
+  container.appendChild(list);
+  container.appendChild(footer);
+
+  container.querySelectorAll('[data-col-check]').forEach((el) => {
+    el.addEventListener('change', () => {
+      config.visible[el.getAttribute('data-col-check')] = el.checked;
+      saveColumnConfig(config);
+      applyColumnConfig(config);
     });
-    const divider = document.createElement('div');
-    divider.className = 'dropdown-divider my-1';
-    menu.appendChild(divider);
   });
-}
-
-async function loadTags() {
-  try {
-    const data = await fetch(`${BASE}/api/tags`).then(r => r.json());
-    _allTagData = data;
-    const loadMsg = document.getElementById('tagLoadingMsg');
-    if (loadMsg) loadMsg.remove();
-    renderDropdownItems();
-    renderChips();
-  } catch(e) {
-    const msg = document.getElementById('tagLoadingMsg');
-    if (msg) msg.textContent = 'Failed to load tags';
+  container.querySelectorAll('[data-col-up]').forEach((el) => {
+    el.addEventListener('click', () => {
+      moveColumn(config, el.getAttribute('data-col-up'), -1);
+      saveColumnConfig(config);
+      applyColumnConfig(config);
+      renderColumnPanels(config);
+    });
+  });
+  container.querySelectorAll('[data-col-down]').forEach((el) => {
+    el.addEventListener('click', () => {
+      moveColumn(config, el.getAttribute('data-col-down'), 1);
+      saveColumnConfig(config);
+      applyColumnConfig(config);
+      renderColumnPanels(config);
+    });
+  });
+  const resetBtn = container.querySelector('#resetColumnsBtn');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      const defaults = defaultColumnConfig();
+      saveColumnConfig(defaults);
+      applyColumnConfig(defaults);
+      renderColumnPanels(defaults);
+    });
+  }
+  const closeBtn = container.querySelector('#closeColumnsBtn');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      document.getElementById('columnChooserPanel').style.display = 'none';
+      columnModal.hide();
+    });
   }
 }
 
-async function loadUseTypes() {
-  const select = document.getElementById('useTypeSelect');
-  if (!select) return;
+function renderColumnPanels(config) {
+  renderColumnControls(document.getElementById('columnChooserPanel'), config);
+  renderColumnControls(document.getElementById('columnChooserModalBody'), config);
+}
+
+function getVoteState(candidateId) {
+  const row = document.querySelector(`tr[data-candidate-id="${candidateId}"]`);
+  const upCount = Number((document.getElementById(`row-up-count-${candidateId}`)?.textContent || 0));
+  const downCount = Number((document.getElementById(`row-down-count-${candidateId}`)?.textContent || 0));
+  return {
+    user_vote: row ? (row.getAttribute('data-user-vote') || null) : null,
+    thumbs_up: upCount,
+    thumbs_down: downCount,
+  };
+}
+
+function applyVoteState(candidateId, state) {
+  const row = document.querySelector(`tr[data-candidate-id="${candidateId}"]`);
+  if (row) row.setAttribute('data-user-vote', state.user_vote || '');
+  const upCountEl = document.getElementById(`row-up-count-${candidateId}`);
+  const downCountEl = document.getElementById(`row-down-count-${candidateId}`);
+  if (upCountEl) upCountEl.textContent = state.thumbs_up;
+  if (downCountEl) downCountEl.textContent = state.thumbs_down;
+
+  const upBtn = document.getElementById(`row-up-${candidateId}`);
+  const downBtn = document.getElementById(`row-down-${candidateId}`);
+  if (upBtn) upBtn.className = `btn btn-sm vote-btn ${state.user_vote === 'up' ? 'btn-success' : 'btn-outline-success'}`;
+  if (downBtn) downBtn.className = `btn btn-sm vote-btn ${state.user_vote === 'down' ? 'btn-danger' : 'btn-outline-danger'}`;
+
+  const modalUp = document.getElementById(`upBtn-${candidateId}`);
+  const modalDown = document.getElementById(`downBtn-${candidateId}`);
+  const modalUpCount = document.getElementById(`upCount-${candidateId}`);
+  const modalDownCount = document.getElementById(`downCount-${candidateId}`);
+  if (modalUp) modalUp.className = `btn vote-btn ${state.user_vote === 'up' ? 'btn-success' : 'btn-outline-success'}`;
+  if (modalDown) modalDown.className = `btn vote-btn ${state.user_vote === 'down' ? 'btn-danger' : 'btn-outline-danger'}`;
+  if (modalUpCount) modalUpCount.textContent = state.thumbs_up;
+  if (modalDownCount) modalDownCount.textContent = state.thumbs_down;
+}
+
+function nextVoteState(current, desired) {
+  const next = {...current};
+  if (current.user_vote === desired) {
+    next.user_vote = null;
+    if (desired === 'up') next.thumbs_up = Math.max(0, next.thumbs_up - 1);
+    if (desired === 'down') next.thumbs_down = Math.max(0, next.thumbs_down - 1);
+    return next;
+  }
+  if (current.user_vote === 'up') next.thumbs_up = Math.max(0, next.thumbs_up - 1);
+  if (current.user_vote === 'down') next.thumbs_down = Math.max(0, next.thumbs_down - 1);
+  if (desired === 'up') next.thumbs_up += 1;
+  if (desired === 'down') next.thumbs_down += 1;
+  next.user_vote = desired;
+  return next;
+}
+
+async function doRating(candidateId, rating) {
+  const before = getVoteState(candidateId);
+  const optimistic = nextVoteState(before, rating);
+  applyVoteState(candidateId, optimistic);
+
   try {
-    const data = await fetch(`${BASE}/api/use-types`).then(r => r.json());
-    select.innerHTML = '';
-    const allOpt = document.createElement('option');
-    allOpt.value = '';
-    allOpt.textContent = 'All Use Types';
-    select.appendChild(allOpt);
-    (data.use_types || []).forEach((useType) => {
-      const opt = document.createElement('option');
-      opt.value = useType;
-      opt.textContent = useType;
-      select.appendChild(opt);
+    const resp = await fetch(`${BASE}/api/candidate/${candidateId}/feedback`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({feedback_type: rating === 'up' ? 'thumbs_up' : 'thumbs_down'})
     });
-    select.value = _currentUseType;
+    const data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.error || String(resp.status));
+    applyVoteState(candidateId, {
+      user_vote: data.user_vote,
+      thumbs_up: data.thumbs_up,
+      thumbs_down: data.thumbs_down,
+    });
   } catch (e) {
-    select.innerHTML = '';
-    const opt = document.createElement('option');
-    opt.value = _currentUseType;
-    opt.textContent = _currentUseType || 'All Use Types';
-    select.appendChild(opt);
+    applyVoteState(candidateId, before);
+    alert(`Vote update failed: ${e.message}`);
   }
 }
-
-function applyTagFilter() {
-  document.getElementById('hiddenTags').value = Array.from(_selectedTags).join(',');
-  document.getElementById('hiddenTagsMode').value = document.getElementById('modeAll').checked ? 'all' : 'any';
-  document.getElementById('filterForm').submit();
-}
-
-function clearTagFilter() {
-  _selectedTags.clear();
-  renderChips();
-  renderDropdownItems();
-  document.getElementById('hiddenTags').value = '';
-  document.getElementById('hiddenTagsMode').value = 'any';
-  document.getElementById('filterForm').submit();
-}
-
-// Restore match mode from current URL param
-(function() {
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('tags_mode') === 'all') {
-    document.getElementById('modeAll').checked = true;
-  }
-})();
-
-// Load tags on page load
-loadTags();
-loadUseTypes();
-
-const useTypeSelect = document.getElementById('useTypeSelect');
-if (useTypeSelect) {
-  useTypeSelect.addEventListener('change', () => {
-    document.getElementById('filterForm').submit();
-  });
-}
-
-// ── Original script globals ────────────────────────────────────────────────
-const modal = new bootstrap.Modal(document.getElementById('detailModal'));
-
-// Remove downvoted row when modal is dismissed
-document.getElementById('detailModal').addEventListener('hidden.bs.modal', () => {
-  if (window._lastDownvotedId) {
-    const row = document.querySelector(`tr[data-candidate-id='${window._lastDownvotedId}']`);
-    if (row) {
-      row.style.transition = 'opacity 0.5s';
-      row.style.opacity = '0';
-      setTimeout(() => row.remove(), 500);
-    }
-    window._lastDownvotedId = null;
-  }
-});
-
-let _miniMap = null;
 
 function fmt(v, prefix='$') {
   if (v == null) return '—';
@@ -414,18 +538,12 @@ function fmt(v, prefix='$') {
   return v;
 }
 
-function tierBadgeClass(tier) {
-  const map = {A:'bg-success', B:'bg-primary', C:'bg-warning text-dark', D:'bg-orange text-white', E:'bg-danger', F:'bg-dark'};
-  return map[tier] || 'bg-secondary';
-}
-function tierBadgeStyle(tier) {
-  return tier === 'D' ? 'background:#fd7e14' : '';
-}
 function confBadgeClass(conf) {
   if (conf === 'HIGH') return 'conf-badge-high';
   if (conf === 'MEDIUM') return 'conf-badge-medium';
   return 'conf-badge-low';
 }
+
 const TAG_LABELS = {
   RISK_WIDTH_CONSTRAINED: 'Width ⚠',
   RISK_ACCESS_TRACT_REQUIRED: 'Shared Access',
@@ -434,15 +552,9 @@ const TAG_LABELS = {
   RISK_INFILL_PRICED_IN: 'Priced In',
   EDGE_ARBITRAGE_DEPTH_HIGH: 'Deep Arbitrage 🎯',
 };
+
 function chipText(tag) {
   return TAG_LABELS[tag] || tag;
-}
-
-async function submitFeedback(id, rating, category='', notes='') {
-  const params = new URLSearchParams({rating});
-  if (category) params.append('category', category);
-  if (notes) params.append('notes', notes);
-  await fetch(`${BASE}/api/candidate/${id}/feedback?${params}`, {method:'POST'});
 }
 
 async function openCandidateModal(id, parcelId='') {
@@ -466,46 +578,6 @@ async function openCandidateModal(id, parcelId='') {
   const tagsHtml = (d.tags || []).map(t =>
     `<span class="badge me-1 mb-1" style="background:#e8f4fd;color:#0d6efd;border:1px solid #bee5fd">${chipText(escHtml(t))}</span>`
   ).join('');
-  const sub = d.subdivision || null;
-  const subBadgeCls = sub?.feasibility === 'LIKELY'
-    ? 'bg-success'
-    : (sub?.feasibility === 'POSSIBLE'
-      ? 'bg-warning text-dark'
-      : (sub?.feasibility === 'UNLIKELY' ? 'bg-danger' : 'bg-secondary'));
-  const platMeta = sub?.plat_type === 'SHORT_PLAT'
-    ? '<span class="badge bg-success-subtle text-success border border-success me-2">SHORT PLAT</span><span class="text-muted small">~3-6 months · Admin approval</span>'
-    : (sub?.plat_type === 'LONG_PLAT'
-      ? '<span class="badge text-dark border me-2" style="background:#fff3cd;border-color:#ffda6a !important;">LONG PLAT</span><span class="text-muted small">2-3 years · Full process</span>'
-      : '<span class="badge bg-secondary">NOT FEASIBLE</span>');
-  const subFlagsHtml = (sub?.flags || []).map(f =>
-    `<span class="badge me-1 mb-1 ${f.startsWith('EDGE_') ? 'bg-success-subtle text-success border border-success' : (f.startsWith('RISK_') ? 'bg-danger-subtle text-danger border border-danger' : 'bg-light text-dark border')}">${chipText(escHtml(f))}</span>`
-  ).join('');
-  const subdivisionHtml = sub ? `
-      <div class="col-12">
-        <h6 class="fw-bold text-muted text-uppercase small mb-2">🧭 Subdivision Assessment</h6>
-        <div class="d-flex align-items-center justify-content-between mb-2">
-          <span class="badge ${subBadgeCls} px-2 py-1">${sub.feasibility || 'UNKNOWN'}</span>
-          <span class="small text-muted">Splits Range: <span class="fw-semibold text-dark">${sub.splits_min ?? '—'}-${sub.splits_max ?? '—'}</span></span>
-        </div>
-        <div class="mb-2">
-          ${sub.splits_confidence ? `<span class="badge ${confBadgeClass(sub.splits_confidence)}">${sub.splits_confidence}</span>` : ''}
-          ${sub.access_mode ? `<span class="badge bg-secondary ms-1">${sub.access_mode}</span>` : ''}
-        </div>
-        <div class="mb-2">${platMeta}</div>
-        <div class="mb-2">
-          <span class="${sub.sewer ? 'text-success' : 'text-warning'} small fw-semibold me-3">${sub.sewer ? '✅ Sewer available' : '⚠ Septic required'}</span>
-          <span class="${sub.access ? 'text-success' : 'text-danger'} small fw-semibold">${sub.access ? '✅ Access confirmed' : '⚠ Access unknown'}</span>
-        </div>
-        <div class="small text-muted mb-2">
-          Econ Margin: <span class="fw-semibold text-dark">${sub.economic_margin_pct == null ? '—' : (sub.economic_margin_pct * 100).toFixed(1) + '%'}</span>
-          · Arbitrage: <span class="fw-semibold text-dark">${sub.arbitrage_depth_score ?? '—'}</span>
-        </div>
-        <div class="small text-muted mb-1">Subdivision Score: <span class="fw-semibold text-dark">${sub.score ?? 0}</span>/100</div>
-        <div class="progress" style="height:10px">
-          <div class="progress-bar ${(sub.score ?? 0) >= 70 ? 'bg-success' : ((sub.score ?? 0) >= 40 ? 'bg-warning' : 'bg-danger')}" style="width:${Math.max(0, Math.min(100, sub.score ?? 0))}%"></div>
-        </div>
-        ${subFlagsHtml ? `<div class="mt-2">${subFlagsHtml}</div>` : ''}
-      </div>` : '';
 
   const notesHtml = notesData.length
     ? notesData.map(n => `
@@ -518,217 +590,53 @@ async function openCandidateModal(id, parcelId='') {
         </div>`).join('')
     : '<div class="text-muted small">No notes yet.</div>';
 
-  const upActive   = fb.thumbs_up > 0 ? 'btn-success' : 'btn-outline-success';
-  const downActive = fb.thumbs_down > 0 ? 'btn-danger' : 'btn-outline-danger';
-
+  const upActive = fb.user_vote === 'up' ? 'btn-success' : 'btn-outline-success';
+  const downActive = fb.user_vote === 'down' ? 'btn-danger' : 'btn-outline-danger';
   const detailUrl = `${BASE}/property/${d.parcel_id || parcelId || ''}`;
 
   document.getElementById('modalBody').innerHTML = `
     <div class="row g-3">
-
-      <!-- Property Info -->
       <div class="col-md-6">
         <h6 class="fw-bold text-muted text-uppercase small mb-2">📍 Property</h6>
         <table class="table table-sm table-borderless mb-0">
           <tr><td class="text-muted" style="width:40%">Address</td><td class="fw-semibold">${d.address || '—'}</td></tr>
           <tr><td class="text-muted">County</td><td>${d.county || '—'}</td></tr>
           <tr><td class="text-muted">Lot Size</td><td>${d.lot_sf ? d.lot_sf.toLocaleString() + ' sf<br><span class="text-muted">(' + d.lot_acres + ' ac)</span>' : '—'}</td></tr>
-          <tr><td class="text-muted">Zone</td><td><strong>${d.zone_code || '—'}</strong>${d.zone_label ? '<br><span class="text-muted small">'+d.zone_label+'</span>' : ''}</td></tr>
-          <tr><td class="text-muted">Use Code</td><td>${d.present_use || '—'}</td></tr>
+          <tr><td class="text-muted">Zone</td><td><strong>${d.zone_code || '—'}</strong></td></tr>
           ${d.score != null ? `<tr><td class="text-muted">Score</td><td><span class="badge bg-secondary">${d.score} pts</span></td></tr>` : ''}
-          ${d.feasibility && d.feasibility.best_score != null ? `<tr><td class="text-muted">Feasibility</td><td><span class="badge bg-info text-dark">${Number(d.feasibility.best_score).toFixed(1)}</span></td></tr>` : ''}
         </table>
       </div>
-
-      <!-- Owner + Value -->
       <div class="col-md-6">
         <h6 class="fw-bold text-muted text-uppercase small mb-2">👤 Owner</h6>
         <table class="table table-sm table-borderless mb-0">
           <tr><td class="text-muted" style="width:40%">Name</td><td class="fw-semibold">${d.owner_name || '—'}</td></tr>
           <tr><td class="text-muted">Mailing</td><td class="small">${d.owner_address || '—'}</td></tr>
         </table>
-        <h6 class="fw-bold text-muted text-uppercase small mb-2 mt-3">💰 Value</h6>
-        <table class="table table-sm table-borderless mb-0">
-          <tr><td class="text-muted" style="width:40%">Land Value</td><td>${fmt(d.assessed_value)}</td></tr>
-          <tr><td class="text-muted">Improvements</td><td>${fmt(d.improvement_value)}</td></tr>
-          <tr><td class="text-muted">Total Assessed</td><td class="fw-semibold">${fmt(d.total_value)}</td></tr>
-        </table>
       </div>
-
-      <!-- Splits + Flags -->
       <div class="col-12">
-        <h6 class="fw-bold text-muted text-uppercase small mb-2">🏗️ Subdivision Potential</h6>
-        <div class="row g-2 align-items-center">
-          <div class="col-auto">
-            <div class="text-center p-3 rounded" style="background:#f0fdf4;min-width:80px">
-              <div class="fs-2 fw-bold text-success">${d.splits ?? '—'}</div>
-              <div class="small text-muted">${d.splits_min ?? '—'}-${d.splits_max ?? '—'}</div>
-              ${d.splits_confidence ? `<div><span class="badge ${confBadgeClass(d.splits_confidence)}">${d.splits_confidence}</span></div>` : ''}
-            </div>
-          </div>
-          <div class="col">
-            ${d.wetland_flag ? '<span class="badge bg-danger me-1 mb-1">🌿 Wetland Overlap</span>' : ''}
-            ${d.ag_flag ? '<span class="badge bg-warning text-dark me-1 mb-1">🚜 Ag Zone</span>' : ''}
-            ${d.shoreline_flag ? '<span class="badge bg-info me-1 mb-1">🌊 Shoreline</span>' : ''}
-            ${!d.wetland_flag && !d.ag_flag && !d.shoreline_flag ? '<span class="text-success small">✅ No critical area flags</span>' : ''}
-            ${tagsHtml ? '<div class="mt-2">'+tagsHtml+'</div>' : ''}
-          </div>
-        </div>
+        ${tagsHtml ? '<div class="mt-2">'+tagsHtml+'</div>' : '<span class="text-muted small">No tags</span>'}
       </div>
-
-      ${subdivisionHtml}
-
-      <!-- Satellite -->
-      <div class="col-12">
-        <h6 class="fw-bold text-muted text-uppercase small mb-2">🛰️ Satellite View</h6>
-        ${d.lat ? `
-        <div id="minimap-${d.id}" style="height:200px;border-radius:8px;overflow:hidden;margin-bottom:8px"></div>
-        <div class="d-flex gap-2 flex-wrap">
-          <a href="https://www.google.com/maps/?q=${d.lat},${d.lng}" target="_blank" class="btn btn-sm btn-outline-secondary">📍 Google Maps</a>
-          <a href="https://earth.google.com/web/@${d.lat},${d.lng},500a,500d,35y,0h,0t,0r" target="_blank" class="btn btn-sm btn-outline-secondary">🌍 Google Earth</a>
-        </div>` : '<span class="text-muted small">No coordinates available</span>'}
-      </div>
-
-      <!-- Rating + Feedback -->
       <div class="col-12 border-top pt-3">
-        <h6 class="fw-bold text-muted text-uppercase small mb-2">⭐ Rating</h6>
+        <h6 class="fw-bold text-muted text-uppercase small mb-2">⭐ Vote</h6>
         <div class="d-flex gap-2 align-items-center mb-2">
-          <button id="upBtn-${d.id}" class="btn btn-sm ${upActive}" onclick="doRating('${d.id}','up')">
-            👍 <span id="upCount-${d.id}">${fb.thumbs_up}</span>
-          </button>
-          <button id="downBtn-${d.id}" class="btn btn-sm ${downActive}" onclick="doRating('${d.id}','down')">
-            👎 <span id="downCount-${d.id}">${fb.thumbs_down}</span>
-          </button>
-        </div>
-        <!-- Negative feedback reason (hidden until 👎 clicked) -->
-        <div id="fbForm-${d.id}" class="d-none mb-2">
-          <select id="fbCat-${d.id}" class="form-select form-select-sm mb-1" style="max-width:320px">
-            <option value="">Select reason…</option>
-            <option value="wrong_use">Wrong use type (substation, commercial, etc.)</option>
-            <option value="utility">Utility / govt owned</option>
-            <option value="hoa">HOA / association land</option>
-            <option value="not_buildable">Not buildable (wetland, access issue)</option>
-            <option value="other">Other</option>
-          </select>
-          <textarea id="fbNotes-${d.id}" class="form-control form-control-sm mb-1" rows="2" placeholder="Notes (optional)…" style="max-width:320px"></textarea>
-          <button class="btn btn-danger btn-sm" onclick="submitNegFeedback('${d.id}')">Save note (optional)</button>
+          <button id="upBtn-${d.id}" class="btn vote-btn ${upActive}" onclick="doRating('${d.id}','up')">👍 <span id="upCount-${d.id}">${fb.thumbs_up}</span></button>
+          <button id="downBtn-${d.id}" class="btn vote-btn ${downActive}" onclick="doRating('${d.id}','down')">👎 <span id="downCount-${d.id}">${fb.thumbs_down}</span></button>
         </div>
       </div>
-
-      <!-- Comments -->
       <div class="col-12 border-top pt-3">
         <h6 class="fw-bold text-muted text-uppercase small mb-2">💬 Notes</h6>
         <div id="notesList-${d.id}" class="mb-2">${notesHtml}</div>
         <div class="d-flex gap-2">
-          <input id="noteInput-${d.id}" type="text" class="form-control form-control-sm" placeholder="Add a note…" style="max-width:300px"
-                 onkeydown="if(event.key==='Enter'){addNote('${d.id}')}">
+          <input id="noteInput-${d.id}" type="text" class="form-control form-control-sm" placeholder="Add a note..." style="max-width:300px" onkeydown="if(event.key==='Enter'){addNote('${d.id}')}">
           <button class="btn btn-sm btn-outline-primary" onclick="addNote('${d.id}')">Add note</button>
         </div>
       </div>
-
-      <!-- View Details -->
       <div class="col-12 border-top pt-3 d-flex justify-content-end">
         <a href="${detailUrl}" class="btn btn-primary btn-sm">View Full Details →</a>
       </div>
-
     </div>
   `;
 
-  if (d.lat) {
-    setTimeout(() => {
-      _miniMap = L.map(`minimap-${d.id}`, {zoomControl: false, attributionControl: false})
-        .setView([d.lat, d.lng], 17);
-      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}').addTo(_miniMap);
-      L.marker([d.lat, d.lng]).addTo(_miniMap);
-    }, 300);
-  }
-}
-
-function escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-async function doRating(id, rating, listItemSelector=null) {
-  const resp = await fetch(`${BASE}/api/candidate/${id}/feedback`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({feedback_type: rating === 'up' ? 'thumbs_up' : 'thumbs_down'})
-  });
-  let data = {};
-  try { data = await resp.json(); } catch(e) {}
-
-  if (!resp.ok || data.error) {
-    alert('Feedback error: ' + (data.error || resp.status));
-    return;
-  }
-
-  if (rating === 'down') {
-    // Store candidate id — row removed when modal closes
-    window._lastDownvotedId = id;
-    const downBtn = document.getElementById('downBtn-'+id);
-    if (downBtn) downBtn.className = 'btn btn-sm btn-danger';
-    // Show reason/note form — modal stays open
-    const fbDiv = document.getElementById('fbForm-'+id);
-    if (fbDiv) { fbDiv.classList.remove('d-none'); }
-  } else {
-    const upBtn = document.getElementById('upBtn-'+id);
-    if (upBtn) { upBtn.className = 'btn btn-sm btn-success'; upBtn.innerHTML = '👍 Saved! ✓'; }
-    // Update tier badge in modal if tier changed
-    if (data.new_tier) {
-      const tierBadge = document.getElementById('tierBadge-'+id);
-      if (tierBadge) {
-        const tierColors = {A:'success',B:'primary',C:'warning',D:'warning text-dark',E:'danger',F:'secondary'};
-        const c = tierColors[data.new_tier] || 'secondary';
-        tierBadge.className = `badge bg-${c} fs-6`;
-        tierBadge.textContent = 'Tier ' + data.new_tier;
-      }
-    }
-    // Show a quick toast
-    showToast('👍 Flagged as good deal — Tier ' + (data.new_tier || '?'), 'success');
-  }
-}
-
-function showToast(msg, type='info') {
-  let container = document.getElementById('toastContainer');
-  if (!container) {
-    container = document.createElement('div');
-    container.id = 'toastContainer';
-    container.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:9999;display:flex;flex-direction:column;gap:.5rem';
-    document.body.appendChild(container);
-  }
-  const t = document.createElement('div');
-  t.className = `alert alert-${type} shadow py-2 px-3 mb-0`;
-  t.style.cssText = 'min-width:220px;font-size:.9rem';
-  t.textContent = msg;
-  container.appendChild(t);
-  setTimeout(() => t.remove(), 3000);
-}
-
-async function submitNegFeedback(id) {
-  const catEl = document.getElementById(`fbCat-${id}`);
-  const notesEl = document.getElementById(`fbNotes-${id}`);
-  const cat = catEl ? catEl.value : '';
-  const notes = notesEl ? notesEl.value.trim() : '';
-  const reasonMap = {
-    wrong_use: 'Wrong use type',
-    utility: 'Utility / govt owned',
-    hoa: 'HOA / association land',
-    not_buildable: 'Not buildable',
-    other: 'Other'
-  };
-  const parts = [];
-  if (cat) parts.push(`Downvote reason: ${reasonMap[cat] || cat}`);
-  if (notes) parts.push(notes);
-  if (!parts.length) {
-    document.getElementById(`fbForm-${id}`).innerHTML = '<span class="text-muted small">No note saved.</span>';
-    return;
-  }
-  await fetch(`${BASE}/api/candidate/${id}/notes`, {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({note: parts.join(' | ')}),
-  });
-  document.getElementById(`fbForm-${id}`).innerHTML = '<span class="text-success small">✅ Note saved</span>';
 }
 
 async function addNote(id) {
@@ -741,7 +649,6 @@ async function addNote(id) {
     body: JSON.stringify({note}),
   });
   inp.value = '';
-  // Reload notes
   const notesData = await fetch(`${BASE}/api/candidate/${id}/notes?limit=3`).then(r=>r.json());
   const html = notesData.length
     ? notesData.map(n => `
@@ -755,5 +662,89 @@ async function addNote(id) {
     : '<div class="text-muted small">No notes yet.</div>';
   document.getElementById(`notesList-${id}`).innerHTML = html;
 }
+
+async function loadUseTypes() {
+  const select = document.getElementById('useTypeSelect');
+  if (!select) return;
+  try {
+    const data = await fetch(`${BASE}/api/use-types`).then(r => r.json());
+    select.innerHTML = '';
+    (data.use_types || []).forEach((useType) => {
+      const opt = document.createElement('option');
+      opt.value = useType;
+      opt.textContent = useType;
+      if (CURRENT_USE_TYPES.includes(useType)) opt.selected = true;
+      select.appendChild(opt);
+    });
+  } catch (e) {
+    select.innerHTML = '';
+  }
+}
+
+function renderActiveFilterChips() {
+  const container = document.getElementById('activeFilterChips');
+  if (!container) return;
+  container.innerHTML = '';
+  const entries = [];
+  const params = new URLSearchParams(window.location.search);
+  params.forEach((value, key) => {
+    if (!value || key === 'page') return;
+    entries.push([key, value]);
+  });
+  entries.forEach(([key, value]) => {
+    const chip = document.createElement('span');
+    chip.className = 'filter-chip';
+    chip.textContent = `${key}: ${value}`;
+    container.appendChild(chip);
+  });
+}
+
+function applyPreset(preset) {
+  const form = document.getElementById('filterForm');
+  if (!form) return;
+  if (preset === 'tier_a') {
+    const tiers = form.querySelector('#tiersSelect');
+    Array.from(tiers.options).forEach((o) => { o.selected = (o.value === 'A'); });
+  }
+  if (preset === 'voted_up') {
+    const vote = form.querySelector('select[name="vote"]');
+    vote.value = 'up';
+  }
+  if (preset === 'has_bundle') {
+    const hasBundle = form.querySelector('select[name="has_bundle"]');
+    hasBundle.value = '1';
+  }
+  form.querySelector('#pageInput').value = '1';
+  form.submit();
+}
+
+const columnConfig = loadColumnConfig();
+applyColumnConfig(columnConfig);
+renderColumnPanels(columnConfig);
+loadUseTypes();
+renderActiveFilterChips();
+
+document.getElementById('columnGearBtn').addEventListener('click', () => {
+  if (window.innerWidth < 768) {
+    columnModal.show();
+    return;
+  }
+  const panel = document.getElementById('columnChooserPanel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+});
+
+document.addEventListener('click', (event) => {
+  const panel = document.getElementById('columnChooserPanel');
+  const gear = document.getElementById('columnGearBtn');
+  if (!panel || panel.style.display === 'none') return;
+  if (!panel.contains(event.target) && !gear.contains(event.target)) panel.style.display = 'none';
+});
+
+document.querySelectorAll('#filterForm input, #filterForm select').forEach((el) => {
+  el.addEventListener('change', () => {
+    const page = document.getElementById('pageInput');
+    if (page) page.value = '1';
+  });
+});
 </script>
 {% endblock %}

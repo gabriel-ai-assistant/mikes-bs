@@ -7,14 +7,463 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from sqlalchemy import func, text
+from sqlalchemy import and_, func, or_, text
 from sqlalchemy.orm import Session, joinedload
 
 from openclaw.analysis.bundles_service import detect_bundle_for_candidate
-from openclaw.db.models import Candidate, CandidateFeedback, CandidateNote, Parcel, ScoreTierEnum, ZoningRule
+from openclaw.db.models import Candidate, CandidateFeedback, CandidateNote, Lead, Parcel, ScoreTierEnum, ZoningRule
 from openclaw.web.common import db, fmt_acres, fmt_money, fmt_sqft, templates
 
 router = APIRouter()
+VOTE_META_PREFIX = "__vote_meta__:"
+
+
+def _split_list_param(values: list[str]) -> list[str]:
+    items: list[str] = []
+    for raw in values:
+        for part in (raw or "").split(","):
+            v = part.strip()
+            if v:
+                items.append(v)
+    return items
+
+
+def _parse_int(value: str | None, default: int, *, minimum: int | None = None, maximum: int | None = None) -> int:
+    try:
+        parsed = int(value) if value not in (None, "") else default
+    except (TypeError, ValueError):
+        parsed = default
+    if minimum is not None:
+        parsed = max(minimum, parsed)
+    if maximum is not None:
+        parsed = min(maximum, parsed)
+    return parsed
+
+
+def _parse_float(value: str | None) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_boolish(value: str | None) -> bool | None:
+    if value in (None, ""):
+        return None
+    v = value.strip().lower()
+    if v in ("1", "true", "yes", "y", "on"):
+        return True
+    if v in ("0", "false", "no", "n", "off"):
+        return False
+    return None
+
+
+def _parse_candidate_filters(request: Request) -> dict:
+    qp = request.query_params
+    tiers = _split_list_param(qp.getlist("tiers"))
+    if not tiers and qp.get("tier"):
+        tiers = _split_list_param([qp.get("tier", "")])
+
+    tags_any = _split_list_param(qp.getlist("tags_any"))
+    legacy_tags = qp.get("tags")
+    tags_mode = (qp.get("tags_mode") or "any").lower()
+    if not tags_any and legacy_tags:
+        tags_any = _split_list_param([legacy_tags])
+
+    tags_none = _split_list_param(qp.getlist("tags_none"))
+    use_types = _split_list_param(qp.getlist("use_types"))
+    if not use_types and qp.get("use_type"):
+        use_types = _split_list_param([qp.get("use_type", "")])
+
+    q = (qp.get("q") or "").strip()
+    sort = (qp.get("sort") or "score_desc").strip() or "score_desc"
+    vote = (qp.get("vote") or "").strip().lower() or None
+    if vote not in ("up", "down", "none"):
+        vote = None
+
+    lead_status = (qp.get("lead_status") or "").strip() or None
+    osint_status = (qp.get("osint_status") or "").strip() or None
+    has_bundle = _parse_boolish(qp.get("has_bundle"))
+
+    score_min = _parse_float(qp.get("score_min"))
+    score_max = _parse_float(qp.get("score_max"))
+
+    wetland = (qp.get("wetland") or "").strip() == "1"
+    ag = (qp.get("ag") or "").strip() == "1"
+
+    limit = _parse_int(qp.get("limit"), 50, minimum=1, maximum=500)
+    page = _parse_int(qp.get("page"), 1, minimum=1)
+    offset_raw = qp.get("offset")
+    if offset_raw not in (None, "") and "page" not in qp:
+        offset = _parse_int(offset_raw, 0, minimum=0)
+        page = (offset // max(limit, 1)) + 1
+    offset = (page - 1) * limit
+
+    return {
+        "q": q,
+        "tiers": tiers,
+        "tags_any": tags_any,
+        "tags_none": tags_none,
+        "tags_mode": tags_mode,
+        "use_types": use_types,
+        "score_min": score_min,
+        "score_max": score_max,
+        "vote": vote,
+        "lead_status": lead_status,
+        "has_bundle": has_bundle,
+        "osint_status": osint_status,
+        "sort": sort,
+        "page": page,
+        "limit": limit,
+        "offset": offset,
+        "wetland": wetland,
+        "ag": ag,
+    }
+
+
+def _extract_actor_from_vote_note(note: str | None) -> str | None:
+    if not note or not note.startswith(VOTE_META_PREFIX):
+        return None
+    body = note[len(VOTE_META_PREFIX):].splitlines()[0].strip()
+    if not body:
+        return None
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    actor = payload.get("actor")
+    return str(actor) if actor else None
+
+
+def _actor_key(request: Request) -> str:
+    user_id = request.cookies.get("user_id")
+    if user_id:
+        return f"user:{user_id}"
+    host = request.client.host if request.client else "unknown"
+    return f"anon:{host}"
+
+
+def _feedback_maps(session: Session, candidate_ids: list[str], actor_key: str) -> tuple[dict[str, dict], dict[str, str | None]]:
+    if not candidate_ids:
+        return {}, {}
+    rows = session.query(
+        CandidateFeedback.candidate_id,
+        CandidateFeedback.rating,
+        CandidateFeedback.notes,
+    ).filter(CandidateFeedback.candidate_id.in_(candidate_ids)).all()
+    totals: dict[str, dict] = {}
+    user_votes: dict[str, str | None] = {}
+    for candidate_id, rating, notes in rows:
+        key = str(candidate_id)
+        bucket = totals.setdefault(key, {"thumbs_up": 0, "thumbs_down": 0})
+        if rating == "up":
+            bucket["thumbs_up"] += 1
+        elif rating == "down":
+            bucket["thumbs_down"] += 1
+        actor = _extract_actor_from_vote_note(notes)
+        if actor and actor == actor_key:
+            user_votes[key] = rating
+    for cid in candidate_ids:
+        totals.setdefault(cid, {"thumbs_up": 0, "thumbs_down": 0})
+        user_votes.setdefault(cid, None)
+    return totals, user_votes
+
+
+def _latest_lead_status_subquery(session: Session):
+    latest = (
+        session.query(
+            Lead.candidate_id.label("candidate_id"),
+            func.max(Lead.created_at).label("created_at"),
+        )
+        .group_by(Lead.candidate_id)
+        .subquery()
+    )
+    return (
+        session.query(
+            Lead.candidate_id.label("candidate_id"),
+            Lead.status.label("lead_status"),
+        )
+        .join(
+            latest,
+            and_(
+                Lead.candidate_id == latest.c.candidate_id,
+                Lead.created_at == latest.c.created_at,
+            ),
+        )
+        .subquery()
+    )
+
+
+def _sort_expression(sort: str):
+    sort_map = {
+        "score_desc": Candidate.score.desc(),
+        "score_asc": Candidate.score.asc(),
+        "splits": Candidate.potential_splits.desc(),
+        "splits_desc": Candidate.potential_splits.desc(),
+        "splits_asc": Candidate.potential_splits.asc(),
+        "lot": Parcel.lot_sf.desc(),
+        "lot_desc": Parcel.lot_sf.desc(),
+        "lot_asc": Parcel.lot_sf.asc(),
+        "value": Parcel.assessed_value.desc(),
+        "value_desc": Parcel.assessed_value.desc(),
+        "value_asc": Parcel.assessed_value.asc(),
+        "address_asc": Parcel.address.asc(),
+        "address_desc": Parcel.address.desc(),
+    }
+    return sort_map.get(sort, Candidate.score.desc())
+
+
+def _apply_filters_to_query(query, filters: dict, fb_subq, lead_subq):
+    q_text = filters["q"]
+    if q_text:
+        # TODO(FIX-I Phase 2): if this query exceeds ~200ms, enable pg_trgm on candidates.display_text.
+        query = query.filter(Candidate.display_text.ilike(f"%{q_text}%"))
+
+    tiers = [t for t in filters["tiers"] if t in ("A", "B", "C", "D", "E", "F")]
+    if tiers:
+        query = query.filter(Candidate.score_tier.in_([ScoreTierEnum(t) for t in tiers]))
+
+    if filters["wetland"]:
+        query = query.filter(Candidate.has_critical_area_overlap.is_(True))
+    if filters["ag"]:
+        query = query.filter(Candidate.flagged_for_review.is_(True))
+
+    if filters["use_types"]:
+        lowered = [v.lower() for v in filters["use_types"]]
+        query = query.filter(func.lower(func.coalesce(Parcel.present_use, "")).in_(lowered))
+
+    if filters["tags_any"]:
+        if filters.get("tags_mode") == "all":
+            for idx, tag in enumerate(filters["tags_any"]):
+                query = query.filter(text(f":_tag_all_{idx} = ANY(candidates.tags)").bindparams(**{f"_tag_all_{idx}": tag}))
+        else:
+            query = query.filter(Candidate.tags.overlap(filters["tags_any"]))
+    if filters["tags_none"]:
+        query = query.filter(or_(Candidate.tags.is_(None), ~Candidate.tags.overlap(filters["tags_none"])))
+
+    if filters["score_min"] is not None:
+        query = query.filter(Candidate.score >= filters["score_min"])
+    if filters["score_max"] is not None:
+        query = query.filter(Candidate.score <= filters["score_max"])
+
+    if filters["vote"] == "up":
+        query = query.filter(func.coalesce(fb_subq.c.vote_net, 0) >= 1)
+    elif filters["vote"] == "down":
+        query = query.filter(func.coalesce(fb_subq.c.vote_net, 0) <= -1)
+    elif filters["vote"] == "none":
+        query = query.filter(func.coalesce(fb_subq.c.thumbs_up, 0) == 0, func.coalesce(fb_subq.c.thumbs_down, 0) == 0)
+
+    if filters["lead_status"]:
+        query = query.filter(lead_subq.c.lead_status == filters["lead_status"])
+    if filters["has_bundle"] is True:
+        query = query.filter(Candidate.bundle_data.isnot(None))
+    elif filters["has_bundle"] is False:
+        query = query.filter(Candidate.bundle_data.is_(None))
+    if filters["osint_status"]:
+        # Block E adds osint fields; pre-E data should return empty when explicitly filtering.
+        query = query.filter(text("1=0"))
+
+    return query
+
+
+@router.get("/candidates", response_class=HTMLResponse)
+def candidates_page(request: Request, session: Session = Depends(db)):
+    filters = _parse_candidate_filters(request)
+    actor_key = _actor_key(request)
+
+    fb_subq = (
+        session.query(
+            CandidateFeedback.candidate_id.label("candidate_id"),
+            func.count(CandidateFeedback.id).filter(CandidateFeedback.rating == "up").label("thumbs_up"),
+            func.count(CandidateFeedback.id).filter(CandidateFeedback.rating == "down").label("thumbs_down"),
+            (
+                func.count(CandidateFeedback.id).filter(CandidateFeedback.rating == "up")
+                - func.count(CandidateFeedback.id).filter(CandidateFeedback.rating == "down")
+            ).label("vote_net"),
+        )
+        .group_by(CandidateFeedback.candidate_id)
+        .subquery()
+    )
+    lead_subq = _latest_lead_status_subquery(session)
+
+    query = (
+        session.query(
+            Candidate,
+            func.coalesce(fb_subq.c.thumbs_up, 0).label("thumbs_up"),
+            func.coalesce(fb_subq.c.thumbs_down, 0).label("thumbs_down"),
+            func.coalesce(fb_subq.c.vote_net, 0).label("vote_net"),
+            lead_subq.c.lead_status.label("lead_status"),
+        )
+        .join(Parcel)
+        .outerjoin(fb_subq, fb_subq.c.candidate_id == Candidate.id)
+        .outerjoin(lead_subq, lead_subq.c.candidate_id == Candidate.id)
+        .options(joinedload(Candidate.parcel))
+    )
+    query = _apply_filters_to_query(query, filters, fb_subq, lead_subq)
+    rows = query.order_by(_sort_expression(filters["sort"])).limit(min(500, filters["limit"])).all()
+
+    candidate_ids = [str(c.id) for c, _u, _d, _n, _ls in rows]
+    parcel_ids = [str(c.parcel_id) for c, _u, _d, _n, _ls in rows]
+    feedback_totals, user_votes = _feedback_maps(session, candidate_ids, actor_key)
+
+    feas_rows = []
+    if parcel_ids:
+        feas_rows = session.execute(text("""
+            SELECT DISTINCT ON (parcel_id)
+                parcel_id::text AS parcel_id,
+                best_score
+            FROM feasibility_results
+            WHERE status = 'complete'
+              AND parcel_id::text = ANY(:parcel_ids)
+            ORDER BY parcel_id, completed_at DESC NULLS LAST, created_at DESC
+        """), {"parcel_ids": parcel_ids}).mappings().all()
+    feas_map = {r["parcel_id"]: r["best_score"] for r in feas_rows}
+
+    zone_labels = dict(
+        session.query(ZoningRule.zone_code, ZoningRule.notes)
+        .filter(ZoningRule.county == "snohomish").all()
+    )
+
+    table_rows = []
+    for c, thumbs_up, thumbs_down, vote_net, lead_status in rows:
+        key = str(c.id)
+        table_rows.append({
+            "candidate": c,
+            "thumbs_up": int(feedback_totals.get(key, {}).get("thumbs_up", thumbs_up or 0)),
+            "thumbs_down": int(feedback_totals.get(key, {}).get("thumbs_down", thumbs_down or 0)),
+            "vote_net": int(vote_net or 0),
+            "user_vote": user_votes.get(key),
+            "lead_status": lead_status,
+            "has_bundle": bool(c.bundle_data),
+            "osint_status": None,
+        })
+
+    return templates.TemplateResponse("candidates.html", {
+        "request": request,
+        "rows": table_rows,
+        "zone_labels": zone_labels,
+        "filters": filters,
+        "feasibility_scores": feas_map,
+    })
+
+
+@router.get("/api/tags")
+def get_all_tags(session: Session = Depends(db)):
+    rows = session.execute(text("""
+        SELECT DISTINCT unnest(tags) as tag, count(*) as cnt
+        FROM candidates
+        WHERE tags IS NOT NULL
+        GROUP BY tag ORDER BY cnt DESC
+    """)).mappings().all()
+    return [{"tag": r["tag"], "count": r["cnt"]} for r in rows]
+
+
+@router.get("/api/candidates")
+def get_candidates_api(request: Request, session: Session = Depends(db)):
+    filters = _parse_candidate_filters(request)
+    actor_key = _actor_key(request)
+
+    fb_subq = (
+        session.query(
+            CandidateFeedback.candidate_id.label("candidate_id"),
+            func.count(CandidateFeedback.id).filter(CandidateFeedback.rating == "up").label("thumbs_up"),
+            func.count(CandidateFeedback.id).filter(CandidateFeedback.rating == "down").label("thumbs_down"),
+            (
+                func.count(CandidateFeedback.id).filter(CandidateFeedback.rating == "up")
+                - func.count(CandidateFeedback.id).filter(CandidateFeedback.rating == "down")
+            ).label("vote_net"),
+        )
+        .group_by(CandidateFeedback.candidate_id)
+        .subquery()
+    )
+    lead_subq = _latest_lead_status_subquery(session)
+
+    query = (
+        session.query(
+            Candidate,
+            func.ST_Y(func.ST_Centroid(Parcel.geometry)).label("lat"),
+            func.ST_X(func.ST_Centroid(Parcel.geometry)).label("lng"),
+            func.coalesce(fb_subq.c.thumbs_up, 0).label("thumbs_up"),
+            func.coalesce(fb_subq.c.thumbs_down, 0).label("thumbs_down"),
+            func.coalesce(fb_subq.c.vote_net, 0).label("vote_net"),
+            lead_subq.c.lead_status.label("lead_status"),
+        )
+        .join(Parcel)
+        .outerjoin(fb_subq, fb_subq.c.candidate_id == Candidate.id)
+        .outerjoin(lead_subq, lead_subq.c.candidate_id == Candidate.id)
+        .options(joinedload(Candidate.parcel))
+    )
+    query = _apply_filters_to_query(query, filters, fb_subq, lead_subq)
+
+    total = query.count()
+    rows = query.order_by(_sort_expression(filters["sort"])).offset(filters["offset"]).limit(filters["limit"]).all()
+
+    candidate_ids = [str(c.id) for c, _lat, _lng, _u, _d, _n, _ls in rows]
+    parcel_ids = [str(c.parcel_id) for c, _lat, _lng, _u, _d, _n, _ls in rows]
+    feedback_totals, user_votes = _feedback_maps(session, candidate_ids, actor_key)
+
+    feas_rows = []
+    if parcel_ids:
+        feas_rows = session.execute(text("""
+            SELECT DISTINCT ON (parcel_id)
+                parcel_id::text AS parcel_id,
+                best_score,
+                best_layout_id
+            FROM feasibility_results
+            WHERE status = 'complete'
+              AND parcel_id::text = ANY(:parcel_ids)
+            ORDER BY parcel_id, completed_at DESC NULLS LAST, created_at DESC
+        """), {"parcel_ids": parcel_ids}).mappings().all()
+    feas_map = {r["parcel_id"]: {"score": r["best_score"], "layout": r["best_layout_id"]} for r in feas_rows}
+
+    candidates = []
+    for c, lat, lng, thumbs_up, thumbs_down, vote_net, lead_status in rows:
+        key = str(c.id)
+        candidates.append({
+            "id": key,
+            "parcel_id": c.parcel.parcel_id,
+            "address": c.parcel.address,
+            "owner": c.owner_name_canonical or c.parcel.owner_name,
+            "tier": c.score_tier.value if c.score_tier else None,
+            "score": c.score,
+            "lead_status": lead_status,
+            "osint_status": None,
+            "has_bundle": bool(c.bundle_data),
+            "vote": {
+                "thumbs_up": int(feedback_totals.get(key, {}).get("thumbs_up", thumbs_up or 0)),
+                "thumbs_down": int(feedback_totals.get(key, {}).get("thumbs_down", thumbs_down or 0)),
+                "net": int(vote_net or 0),
+                "user_vote": user_votes.get(key),
+            },
+            "use_type": c.parcel.present_use,
+            "splits": c.potential_splits,
+            "splits_min": c.splits_min,
+            "splits_max": c.splits_max,
+            "splits_confidence": c.splits_confidence,
+            "subdivision_access_mode": c.subdivision_access_mode,
+            "economic_margin_pct": c.economic_margin_pct,
+            "arbitrage_depth_score": c.arbitrage_depth_score,
+            "lot_sf": c.parcel.lot_sf,
+            "zone_code": c.parcel.zone_code,
+            "assessed_value": c.parcel.assessed_value,
+            "tags": c.tags or [],
+            "feasibility_score": (feas_map.get(str(c.parcel_id)) or {}).get("score"),
+            "feasibility_best_layout": (feas_map.get(str(c.parcel_id)) or {}).get("layout"),
+            "display_text": c.display_text,
+            "lat": float(lat) if lat is not None else None,
+            "lng": float(lng) if lng is not None else None,
+        })
+
+    return {
+        "total": total,
+        "count": len(rows),
+        "page": filters["page"],
+        "limit": filters["limit"],
+        "filters": filters,
+        "candidates": candidates,
+    }
 
 
 @router.get("/candidates", response_class=HTMLResponse)
