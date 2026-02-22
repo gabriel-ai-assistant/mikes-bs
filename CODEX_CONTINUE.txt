@@ -1,0 +1,49 @@
+You are continuing an overnight build of the Mike's Building System (mikes-bs) app on aidev01. Full spec is in TASK.md and OSINT_ARCHITECTURE.md. Read them both if you need context.
+
+## WHERE WE LEFT OFF
+
+Completed and committed:
+- FIX block (A-I) ✅
+- PREP-1: Alembic fix ✅
+- PREP-2: app.py decomposed into routers ✅
+- PREP-3: ORM models for raw tables ✅
+- PREP-4: Basic auth (admin/admin) ✅
+
+Block A (bundle detection) was STARTED but NOT committed. You have uncommitted changes in:
+- openclaw/analysis/bundles_service.py (new file)
+- openclaw/analysis/edge_config.py (modified)
+- openclaw/analysis/rule_engine.py (modified)
+- openclaw/web/routers/candidates.py (modified)
+
+## YOUR FIRST ACTION
+
+1. Review the uncommitted Block A work with `git diff` and `cat openclaw/analysis/bundles_service.py`
+2. Finish any incomplete parts of Block A (A1 through A8 per TASK.md)
+3. Run tests: `docker compose exec web python -m pytest tests/ -x -q 2>&1 | tail -20`
+4. Commit: `git add -A && git commit -m "[openclaw] Block-A: adjacent same-owner parcel bundle detection"`
+5. Write marker: `echo "BLOCK_A_COMPLETE $(date -Iseconds)" >> /tmp/openclaw_progress.log`
+6. Then continue in order: B → C → D1 audit → D2 → E → F → G → H → observability → tests
+
+## CRITICAL CONTEXT
+
+- OSINT_BASE_URL = http://localhost:8450/api (NOT 8000)
+- Auth: admin/admin seed
+- All STOP points: auto-continue if tests pass
+- D1 learning audit: write LEARNING_AUDIT.md, evaluate yourself, proceed to D2 if clean
+- Known pre-existing test failure: test_feasibility.py::test_offline_parcel_load (geopandas dtype issue, not your bug, ignore it)
+- App runs in Docker: `docker compose restart web` after changes, `docker compose exec web alembic upgrade head` for migrations
+- DB: `docker compose exec postgis psql -U openclaw`
+
+## CHECKPOINT PROTOCOL (mandatory after every block)
+
+1. Run tests
+2. `git add -A && git commit -m "[openclaw] {BLOCK}: {description}"`
+3. `echo "{BLOCK}_COMPLETE $(date -Iseconds)" >> /tmp/openclaw_progress.log`
+4. If stuck >10 min: commit as [WIP], write BLOCKED.md, echo {BLOCK}_BLOCKED to progress log, move on
+
+## COMPLETION
+
+When ALL remaining blocks done and test suite passes, run:
+openclaw system event --text "Mike BS build COMPLETE: Blocks A-H done. Check TEST_RESULTS.md and API_CHANGES.md." --mode now
+
+Start immediately — review Block A WIP and either finish or commit it as-is, then move to Block B.

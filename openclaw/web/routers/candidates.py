@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session, joinedload
 
+from openclaw.analysis.bundles_service import detect_bundle_for_candidate
 from openclaw.db.models import Candidate, CandidateFeedback, CandidateNote, Parcel, ScoreTierEnum, ZoningRule
 from openclaw.web.common import db, fmt_acres, fmt_money, fmt_sqft, templates
 
@@ -443,3 +444,19 @@ def property_detail(parcel_id: str, request: Request, session: Session = Depends
         "fmt_acres": fmt_acres,
         "fmt_sqft": fmt_sqft,
     })
+
+
+@router.get("/api/candidate/{candidate_id}/bundle")
+def get_bundle(candidate_id: str, session: Session = Depends(db)):
+    candidate = session.query(Candidate).filter(Candidate.id == candidate_id).first()
+    if not candidate:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return candidate.bundle_data or {}
+
+
+@router.post("/api/candidate/{candidate_id}/detect-bundle")
+def detect_bundle(candidate_id: str, session: Session = Depends(db)):
+    payload = detect_bundle_for_candidate(session, candidate_id)
+    if payload is None:
+        return JSONResponse({"error": "candidate not found"}, status_code=404)
+    return payload

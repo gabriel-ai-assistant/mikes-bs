@@ -27,6 +27,9 @@ class EdgeConfig:
     weight_unit_lot: int = field(default_factory=lambda: int(os.getenv("EDGE_WEIGHT_UNIT_LOT", "20")))
     weight_rural_cluster: int = field(default_factory=lambda: int(os.getenv("EDGE_WEIGHT_RURAL_CLUSTER", "15")))
     weight_user_upvote: int = field(default_factory=lambda: int(os.getenv("EDGE_WEIGHT_USER_UPVOTE", "8")))
+    weight_bundle_same_owner: int = field(default_factory=lambda: int(os.getenv("EDGE_WEIGHT_BUNDLE_SAME_OWNER", "10")))
+    weight_bundle_adjacent: int = field(default_factory=lambda: int(os.getenv("EDGE_WEIGHT_BUNDLE_ADJACENT", "5")))
+    bundle_score_cap: int = field(default_factory=lambda: int(os.getenv("BUNDLE_SCORE_CAP", "15")))
     weight_risk_penalty: int = field(default_factory=lambda: int(os.getenv("EDGE_WEIGHT_RISK_PENALTY", "-8")))
 
 

@@ -1,0 +1,69 @@
+You are the primary engineer for the Mike's Building System (mikes-bs) app. Your full task specification is in `/home/gabriel/mikes-bs/TASK.md` and `/home/gabriel/mikes-bs/OSINT_ARCHITECTURE.md`. Read them both completely before writing a single line of code.
+
+## CRITICAL OVERRIDES (take priority over TASK.md)
+
+1. **OSINT_BASE_URL = http://localhost:8450/api** — NOT port 8000. The osint-platform runs on 8450.
+   - Verify: `curl http://localhost:8450/api/health` should return {"status":"ok"}
+   - The OSINT platform is at `/home/gabriel/osint-platform/` — you MAY modify it if needed for integration
+   
+2. **Auth defaults:** ADMIN_USERNAME=admin, ADMIN_PASSWORD=admin
+
+3. **All STOP points are auto-approved** — evaluate quality yourself and proceed if good. 
+   - For Block D1 (Learning Audit): write the audit report to `/home/gabriel/mikes-bs/LEARNING_AUDIT.md`, evaluate it yourself, and proceed to D2 if no critical blockers.
+
+4. **mikes-bs containers are already running** — Docker Compose is up (postgis:5433, web:8470). After code changes, run `docker compose restart web` (and `app` if needed) from `/home/gabriel/mikes-bs/`.
+
+## CHECKPOINT PROTOCOL (mandatory after every block)
+
+After completing each block:
+1. Run relevant tests: `docker compose exec web python -m pytest tests/ -x -q 2>&1 | tail -20`
+2. Commit: `git add -A && git commit -m "[openclaw] {BLOCK}: {description}"`
+3. Write marker: `echo "{BLOCK}_COMPLETE $(date -Iseconds)" >> /tmp/openclaw_progress.log`
+4. If blocked >10 min on same error: commit with `[WIP]` prefix, write `BLOCKED.md`, write `{BLOCK}_BLOCKED` to progress log, move to next block
+
+## EXECUTION ORDER (from TASK.md §15)
+
+0. FIX block (A through I) — apply all 9 architecture fixes
+1. PREP-1: Fix Alembic (duplicate 006) — write MIGRATION_FIX.md
+2. PREP-2: Decompose app.py into routers
+3. PREP-3: ORM models for raw tables
+4. PREP-4: Basic auth (admin/admin seed)
+5. Block A: Bundle detection
+6. Block B: External links
+7. Block C: Voting fix + columns + filters
+8. Block D1: Learning audit → write LEARNING_AUDIT.md → evaluate → proceed to D2
+9. Block D2: Learning improvements
+10. Block E: Lead extension + enrichment
+11. Block F: Bulk ops + export
+12. Block G: Reminders + map overlay
+13. Block H: OSINT integration (osint_bridge.py — consumer of localhost:8450)
+14. Observability pass
+15. Full test suite — write results to TEST_RESULTS.md
+16. Update .env.example
+17. Write API_CHANGES.md
+
+## WORKING CONTEXT
+
+- Repo: `/home/gabriel/mikes-bs/` (git repo, commit freely)
+- GitHub remote: `github.com/gabriel-ai-assistant/mikes-bs`
+- App URL: `http://localhost:8470`
+- DB: PostgreSQL at localhost:5433 (user: openclaw, pass: password, db: openclaw)
+- Direct DB access: `docker compose exec postgis psql -U openclaw`
+- Alembic: `docker compose exec web alembic upgrade head` (run from /home/gabriel/mikes-bs/)
+- Push commits: `git push origin main`
+
+## KEY RULES
+
+- Read the actual code before touching anything — no guessing
+- No new infrastructure (no Redis, no React, no new Docker services)
+- All distances in PostGIS must use `::geography` cast (not raw degrees)
+- No boolean fields — use enums/tags
+- Mobile-responsive (44px touch targets)
+- All config via env vars
+
+## COMPLETION NOTIFICATION
+
+When ALL blocks are complete and tests pass, run:
+openclaw system event --text "Mike's BS overnight build complete. All blocks done. Check TEST_RESULTS.md and API_CHANGES.md." --mode now
+
+Begin with: `cat TASK.md` then `cat OSINT_ARCHITECTURE.md` then start with FIX block.

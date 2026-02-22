@@ -157,10 +157,18 @@ def evaluate_candidate(candidate: dict, rules: list[dict]) -> tuple[str, int, bo
         'EDGE_WA_UNIT_LOT_SUBDIVISION': _edge_cfg.weight_unit_lot,
         'EDGE_SNOCO_RURAL_CLUSTER_BONUS': _edge_cfg.weight_rural_cluster,
         'EDGE_USER_UPVOTE': _edge_cfg.weight_user_upvote,
+        'EDGE_BUNDLE_SAME_OWNER': _edge_cfg.weight_bundle_same_owner,
+        'EDGE_BUNDLE_ADJACENT': _edge_cfg.weight_bundle_adjacent,
     }
+    bundle_boost = 0
     for tag, weight in edge_boosts.items():
-        if tag in tags:
+        if tag not in tags:
+            continue
+        if tag.startswith("EDGE_BUNDLE_"):
+            bundle_boost += weight
+        else:
             score += weight
+    score += min(bundle_boost, _edge_cfg.bundle_score_cap)
 
     # Apply RISK penalties (cap at -30 total)
     risk_tags = [t for t in tags if t.startswith('RISK_')]
