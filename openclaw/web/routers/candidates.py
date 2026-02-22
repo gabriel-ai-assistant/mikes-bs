@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session, joinedload
 
-from openclaw.db.models import Candidate, Parcel, ScoreTierEnum, ZoningRule
+from openclaw.db.models import Candidate, CandidateFeedback, CandidateNote, Parcel, ScoreTierEnum, ZoningRule
 from openclaw.web.common import db, fmt_acres, fmt_money, fmt_sqft, templates
 
 router = APIRouter()
@@ -336,29 +336,26 @@ async def add_note(candidate_id: str, request: Request, session: Session = Depen
     if not note_text:
         return JSONResponse({"error": "note is required"}, status_code=400)
     author = data.get("author", "user")
-    session.execute(text("""
-        INSERT INTO candidate_notes (candidate_id, note, author)
-        VALUES (:cid, :note, :author)
-    """), {"cid": candidate_id, "note": note_text, "author": author})
+    session.add(CandidateNote(candidate_id=candidate_id, note=note_text, author=author))
     session.commit()
     return {"ok": True}
 
 
 @router.get("/api/candidate/{candidate_id}/notes")
 def get_notes(candidate_id: str, limit: int = Query(10), session: Session = Depends(db)):
-    rows = session.execute(text("""
-        SELECT id, note, author, created_at
-        FROM candidate_notes
-        WHERE candidate_id = :cid
-        ORDER BY created_at DESC
-        LIMIT :lim
-    """), {"cid": candidate_id, "lim": limit}).mappings().all()
+    rows = (
+        session.query(CandidateNote)
+        .filter(CandidateNote.candidate_id == candidate_id)
+        .order_by(CandidateNote.created_at.desc())
+        .limit(limit)
+        .all()
+    )
     return [
         {
-            "id": r["id"],
-            "note": r["note"],
-            "author": r["author"],
-            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            "id": r.id,
+            "note": r.note,
+            "author": r.author,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
         }
         for r in rows
     ]
@@ -405,18 +402,19 @@ def property_detail(parcel_id: str, request: Request, session: Session = Depends
     notes = []
     feedback = {"thumbs_up": 0, "thumbs_down": 0}
     if c:
-        note_rows = session.execute(text("""
-            SELECT note, author, created_at FROM candidate_notes
-            WHERE candidate_id = :cid ORDER BY created_at DESC LIMIT 20
-        """), {"cid": str(c.id)}).mappings().all()
-        notes = [dict(r) for r in note_rows]
+        note_rows = (
+            session.query(CandidateNote)
+            .filter(CandidateNote.candidate_id == c.id)
+            .order_by(CandidateNote.created_at.desc())
+            .limit(20)
+            .all()
+        )
+        notes = [{"note": r.note, "author": r.author, "created_at": r.created_at} for r in note_rows]
 
-        fb_row = session.execute(text("""
-            SELECT
-                COUNT(*) FILTER (WHERE rating='up') as thumbs_up,
-                COUNT(*) FILTER (WHERE rating='down') as thumbs_down
-            FROM candidate_feedback WHERE candidate_id = :cid
-        """), {"cid": str(c.id)}).fetchone()
+        fb_row = session.query(
+            func.count(CandidateFeedback.id).filter(CandidateFeedback.rating == "up").label("thumbs_up"),
+            func.count(CandidateFeedback.id).filter(CandidateFeedback.rating == "down").label("thumbs_down"),
+        ).filter(CandidateFeedback.candidate_id == c.id).first()
         feedback = {
             "thumbs_up": int(fb_row.thumbs_up or 0),
             "thumbs_down": int(fb_row.thumbs_down or 0),

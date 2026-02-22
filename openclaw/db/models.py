@@ -146,6 +146,64 @@ class Lead(Base):
         return value
 
 
+class ScoringRule(Base):
+    __tablename__ = "scoring_rules"
+    __table_args__ = {"extend_existing": True}
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String, nullable=False)
+    field = Column(String, nullable=False)
+    operator = Column(String, nullable=False)
+    value = Column(Text, nullable=False)
+    action = Column(String, nullable=False)
+    tier = Column(String)
+    score_adj = Column(Integer, default=0)
+    priority = Column(Integer, default=100)
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class CandidateFeedback(Base):
+    __tablename__ = "candidate_feedback"
+    __table_args__ = {"extend_existing": True}
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    candidate_id = Column(UUID(as_uuid=True), ForeignKey("candidates.id"), nullable=False, index=True)
+    rating = Column(String, nullable=False)
+    category = Column(String)
+    notes = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class LearningProposal(Base):
+    __tablename__ = "learning_proposals"
+    __table_args__ = {"extend_existing": True}
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_date = Column(DateTime, default=datetime.utcnow)
+    proposal_type = Column(Text)
+    description = Column(Text)
+    evidence = Column(Text)
+    current_value = Column(Text)
+    proposed_value = Column(Text)
+    confidence = Column(Text)
+    estimated_impact = Column(Text)
+    status = Column(Text, nullable=False, default="pending")
+    reviewed_at = Column(DateTime)
+    applied_at = Column(DateTime)
+
+
+class CandidateNote(Base):
+    __tablename__ = "candidate_notes"
+    __table_args__ = {"extend_existing": True}
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    candidate_id = Column(UUID(as_uuid=True), ForeignKey("candidates.id"), nullable=False, index=True)
+    note = Column(Text, nullable=False)
+    author = Column(Text, default="user")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class CriticalArea(Base):
     __tablename__ = "critical_areas"
 

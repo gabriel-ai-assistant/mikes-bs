@@ -5,10 +5,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import func, text
 
 from openclaw.analysis.rule_engine import evaluate_candidate, load_rules, rescore_all
-from openclaw.db.models import Candidate
+from openclaw.db.models import Candidate, CandidateFeedback, ScoringRule
 from openclaw.web.common import db
 
 router = APIRouter()
@@ -40,15 +40,12 @@ async def submit_feedback(
     category_value = (payload.get("category") or category or "").strip()
     notes_value = (payload.get("notes") or notes or "").strip()
 
-    session.execute(text("""
-        INSERT INTO candidate_feedback (candidate_id, rating, category, notes)
-        VALUES (:cid, :rating, :cat, :notes)
-    """), {
-        "cid": candidate_id,
-        "rating": rating_value,
-        "cat": category_value or None,
-        "notes": notes_value or None,
-    })
+    session.add(CandidateFeedback(
+        candidate_id=candidate_id,
+        rating=rating_value,
+        category=category_value or None,
+        notes=notes_value or None,
+    ))
 
     candidate = session.query(Candidate).filter(Candidate.id == candidate_id).first()
     if not candidate:
@@ -63,13 +60,10 @@ async def submit_feedback(
 
 @router.get("/api/candidate/{candidate_id}/feedback")
 def get_feedback(candidate_id: str, session: Session = Depends(db)):
-    row = session.execute(text("""
-        SELECT
-            COUNT(*) FILTER (WHERE rating='up') as thumbs_up,
-            COUNT(*) FILTER (WHERE rating='down') as thumbs_down
-        FROM candidate_feedback
-        WHERE candidate_id = :cid
-    """), {"cid": candidate_id}).fetchone()
+    row = session.query(
+        func.count(CandidateFeedback.id).filter(CandidateFeedback.rating == "up").label("thumbs_up"),
+        func.count(CandidateFeedback.id).filter(CandidateFeedback.rating == "down").label("thumbs_down"),
+    ).filter(CandidateFeedback.candidate_id == candidate_id).first()
     return {
         "thumbs_up": int(row.thumbs_up or 0),
         "thumbs_down": int(row.thumbs_down or 0),
@@ -78,40 +72,50 @@ def get_feedback(candidate_id: str, session: Session = Depends(db)):
 
 @router.get("/api/feedback/stats")
 def feedback_stats(session: Session = Depends(db)):
-    rows = session.execute(text("""
-        SELECT rating, category, count(*) as cnt
-        FROM candidate_feedback
-        GROUP BY rating, category
-        ORDER BY cnt DESC
-    """)).mappings().all()
-    return [dict(r) for r in rows]
+    rows = session.query(
+        CandidateFeedback.rating,
+        CandidateFeedback.category,
+        func.count(CandidateFeedback.id).label("cnt"),
+    ).group_by(
+        CandidateFeedback.rating,
+        CandidateFeedback.category,
+    ).order_by(func.count(CandidateFeedback.id).desc()).all()
+    return [{"rating": r.rating, "category": r.category, "cnt": r.cnt} for r in rows]
 
 
 @router.get("/api/rules")
 def get_rules(session: Session = Depends(db)):
-    rows = session.execute(text("""
-        SELECT id, name, field, operator, value, action, tier, score_adj, priority, active
-        FROM scoring_rules ORDER BY priority ASC, created_at ASC
-    """)).mappings().all()
-    return [dict(r) for r in rows]
+    rows = session.query(ScoringRule).order_by(ScoringRule.priority.asc(), ScoringRule.created_at.asc()).all()
+    return [
+        {
+            "id": str(r.id),
+            "name": r.name,
+            "field": r.field,
+            "operator": r.operator,
+            "value": r.value,
+            "action": r.action,
+            "tier": r.tier,
+            "score_adj": r.score_adj,
+            "priority": r.priority,
+            "active": r.active,
+        }
+        for r in rows
+    ]
 
 
 @router.post("/api/rules")
 async def create_rule(request: Request, session: Session = Depends(db)):
     data = await request.json()
-    session.execute(text("""
-        INSERT INTO scoring_rules (name, field, operator, value, action, tier, score_adj, priority)
-        VALUES (:name, :field, :operator, :value, :action, :tier, :score_adj, :priority)
-    """), {
-        "name": data["name"],
-        "field": data["field"],
-        "operator": data["operator"],
-        "value": data["value"],
-        "action": data["action"],
-        "tier": data.get("tier") or None,
-        "score_adj": int(data.get("score_adj") or 0),
-        "priority": int(data.get("priority") or 100),
-    })
+    session.add(ScoringRule(
+        name=data["name"],
+        field=data["field"],
+        operator=data["operator"],
+        value=data["value"],
+        action=data["action"],
+        tier=data.get("tier") or None,
+        score_adj=int(data.get("score_adj") or 0),
+        priority=int(data.get("priority") or 100),
+    ))
     session.commit()
     return {"ok": True}
 
@@ -119,33 +123,35 @@ async def create_rule(request: Request, session: Session = Depends(db)):
 @router.put("/api/rules/{rule_id}")
 async def update_rule(rule_id: str, request: Request, session: Session = Depends(db)):
     data = await request.json()
-    session.execute(text("""
-        UPDATE scoring_rules SET
-            name=:name, field=:field, operator=:operator, value=:value,
-            action=:action, tier=:tier, score_adj=:score_adj,
-            priority=:priority, active=:active
-        WHERE id=:id
-    """), {
-        **data,
-        "id": rule_id,
-        "tier": data.get("tier") or None,
-        "score_adj": int(data.get("score_adj") or 0),
-        "active": data.get("active", True),
-    })
+    rule = session.query(ScoringRule).filter(ScoringRule.id == rule_id).first()
+    if not rule:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    rule.name = data.get("name", rule.name)
+    rule.field = data.get("field", rule.field)
+    rule.operator = data.get("operator", rule.operator)
+    rule.value = data.get("value", rule.value)
+    rule.action = data.get("action", rule.action)
+    rule.tier = data.get("tier") or None
+    rule.score_adj = int(data.get("score_adj") or 0)
+    rule.priority = int(data.get("priority") or 100)
+    rule.active = bool(data.get("active", True))
     session.commit()
     return {"ok": True}
 
 
 @router.delete("/api/rules/{rule_id}")
 def delete_rule(rule_id: str, session: Session = Depends(db)):
-    session.execute(text("DELETE FROM scoring_rules WHERE id=:id"), {"id": rule_id})
+    session.query(ScoringRule).filter(ScoringRule.id == rule_id).delete(synchronize_session=False)
     session.commit()
     return {"ok": True}
 
 
 @router.patch("/api/rules/{rule_id}/toggle")
 def toggle_rule(rule_id: str, session: Session = Depends(db)):
-    session.execute(text("UPDATE scoring_rules SET active = NOT active WHERE id=:id"), {"id": rule_id})
+    rule = session.query(ScoringRule).filter(ScoringRule.id == rule_id).first()
+    if not rule:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    rule.active = not bool(rule.active)
     session.commit()
     return {"ok": True}
 
