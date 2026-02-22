@@ -8,11 +8,29 @@ from ._geo import to_feature_collection
 from .context import AnalysisContext
 
 
+def _safe_gdf(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Cast pandas StringDtype/ArrowDtype columns to object dtype so fiona/GDAL
+    schema inference works across all pandas/geopandas version combinations.
+    Note: str(StringDtype) returns 'str' in pandas 2.x, not 'string'.
+    """
+    import pandas as _pd
+    gdf = gdf.copy()
+    for col in gdf.columns:
+        if col == gdf.geometry.name:
+            continue
+        dtype = gdf[col].dtype
+        if isinstance(dtype, _pd.StringDtype) or (
+            hasattr(_pd, "ArrowDtype") and isinstance(dtype, _pd.ArrowDtype)
+        ):
+            gdf[col] = gdf[col].astype(object)
+    return gdf
+
+
 def _write_geojson(gdf: gpd.GeoDataFrame, path: Path) -> None:
     if gdf is None or len(gdf) == 0:
         path.write_text('{"type":"FeatureCollection","features":[]}', encoding="utf-8")
         return
-    gdf.to_file(path, driver="GeoJSON")
+    _safe_gdf(gdf).to_file(path, driver="GeoJSON")
 
 
 def run(ctx: AnalysisContext, output_dir: Path | None = None) -> AnalysisContext:
@@ -40,14 +58,14 @@ def run(ctx: AnalysisContext, output_dir: Path | None = None) -> AnalysisContext
         if envelopes is not None:
             _write_geojson(envelopes, out_dir / f"{layout['id']}_envelopes.geojson")
 
-    # geopackage
+    # geopackage — use _safe_gdf to avoid StringDtype fiona incompatibility
     gpkg = out_dir / "feasibility_layers.gpkg"
     if gpkg.exists():
         gpkg.unlink()
     if ctx.parcel_geom is not None and len(ctx.parcel_geom) > 0:
-        ctx.parcel_geom.to_file(gpkg, layer="parcel", driver="GPKG")
+        _safe_gdf(ctx.parcel_geom).to_file(gpkg, layer="parcel", driver="GPKG")
     if ctx.buildable_geom is not None and len(ctx.buildable_geom) > 0:
-        ctx.buildable_geom.to_file(gpkg, layer="buildable", driver="GPKG")
+        _safe_gdf(ctx.buildable_geom).to_file(gpkg, layer="buildable", driver="GPKG")
 
     # static PNG
     png_path = out_dir / "feasibility_map.png"
