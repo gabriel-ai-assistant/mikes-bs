@@ -22,6 +22,7 @@ from openclaw.analysis.scorer import run_scoring
 from openclaw.discovery.engine import run_discovery
 from openclaw.ingest.delta_sync import run_delta_sync
 from openclaw.notify.digest import send_digest
+from openclaw.learning.analyzer import run_nightly_learning
 
 logging.basicConfig(
     level=logging.INFO,
@@ -96,6 +97,7 @@ def main():
     scheduler = BlockingScheduler()
     scheduler.add_job(run_pipeline, "cron", hour=6, minute=0, kwargs={"score_only": False})
     scheduler.add_job(run_discovery, 'cron', day_of_week='sun', hour=6, minute=30, kwargs={'county': None, 'assumptions_version': 'v1'})
+    scheduler.add_job(run_nightly_learning, 'cron', hour=2, minute=0, id='nightly_learning')
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):

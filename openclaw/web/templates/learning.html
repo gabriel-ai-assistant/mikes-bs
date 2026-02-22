@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}🧠 Learning — Mike's BS{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h4 class="fw-bold mb-0">🧠 Scoring Intelligence — Nightly Learning</h4>
+    <p class="text-muted small mb-0">AI-proposed scoring adjustments based on your feedback. Review and approve below.</p>
+  </div>
+  {% if proposals %}
+  <span class="badge bg-warning text-dark fs-6">{{ proposals|length }} pending review</span>
+  {% else %}
+  <span class="badge bg-secondary fs-6">0 pending</span>
+  {% endif %}
+</div>
+
+<!-- Pending proposals -->
+{% if proposals %}
+  <div id="proposals-list">
+  {% for p in proposals %}
+  <div class="card border-0 shadow-sm mb-3 proposal-card" id="card-{{ p.id }}">
+    <div class="card-body">
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+        <!-- Confidence badge -->
+        {% if p.confidence == 'HIGH' %}
+          <span class="badge bg-success">● HIGH confidence</span>
+        {% elif p.confidence == 'MEDIUM' %}
+          <span class="badge bg-warning text-dark">● MEDIUM confidence</span>
+        {% else %}
+          <span class="badge bg-secondary">● LOW confidence</span>
+        {% endif %}
+        <!-- Type chip -->
+        <span class="badge bg-dark text-white">{{ p.proposal_type or 'proposal' }}</span>
+        <!-- Date -->
+        <span class="text-muted small ms-auto">{{ p.run_date.strftime('%b %d %H:%M UTC') if p.run_date else '' }}</span>
+      </div>
+
+      <!-- Description -->
+      <p class="fw-semibold mb-1" style="font-size:1rem">{{ p.description }}</p>
+
+      <!-- Evidence -->
+      {% if p.evidence %}
+      <p class="text-muted small mb-2">📊 {{ p.evidence }}</p>
+      {% endif %}
+
+      <!-- Current → Proposed -->
+      <div class="row g-2 mb-2">
+        <div class="col-md-5">
+          <div class="p-2 rounded bg-light border small">
+            <span class="text-muted fw-semibold">Current:</span><br>
+            <code>{{ p.current_value or '—' }}</code>
+          </div>
+        </div>
+        <div class="col-md-1 d-flex align-items-center justify-content-center text-muted fw-bold">→</div>
+        <div class="col-md-6">
+          <div class="p-2 rounded border border-primary small" style="background:#f0f4ff">
+            <span class="text-primary fw-semibold">Proposed:</span><br>
+            <code>{{ p.proposed_value or '—' }}</code>
+          </div>
+        </div>
+      </div>
+
+      <!-- Impact -->
+      {% if p.estimated_impact %}
+      <p class="small text-muted mb-3">⚡ Impact: {{ p.estimated_impact }}</p>
+      {% endif %}
+
+      <!-- Action buttons -->
+      <div class="d-flex gap-2">
+        <button class="btn btn-success btn-sm"
+                onclick="decide({{ p.id }}, 'approve')">
+          ✅ Approve
+        </button>
+        <button class="btn btn-outline-danger btn-sm"
+                onclick="decide({{ p.id }}, 'reject')">
+          ❌ Reject
+        </button>
+        <span class="spinner-border spinner-border-sm text-secondary ms-2 d-none" id="spin-{{ p.id }}"></span>
+        <span class="text-success small align-self-center d-none" id="done-{{ p.id }}">Saved</span>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+  </div>
+{% else %}
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-body text-center py-5 text-muted">
+      <div style="font-size:3rem">🧠</div>
+      <h5 class="mt-2">No pending proposals</h5>
+      <p class="mb-0 small">The nightly job runs at 02:00 UTC. You can also trigger it manually from <a href="{{ base_url }}/settings">Settings</a>.</p>
+    </div>
+  </div>
+{% endif %}
+
+<!-- Decision history -->
+{% if history %}
+<div class="card border-0 shadow-sm mt-4">
+  <div class="card-body">
+    <h6 class="fw-bold mb-3">📋 Recent Decisions</h6>
+    <div class="table-responsive">
+      <table class="table table-hover table-sm align-middle mb-0">
+        <thead class="table-dark">
+          <tr>
+            <th>Date</th>
+            <th>Type</th>
+            <th>Proposal</th>
+            <th>Confidence</th>
+            <th>Decision</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for h in history %}
+          <tr>
+            <td class="text-muted small text-nowrap">
+              {{ h.reviewed_at.strftime('%b %d %H:%M') if h.reviewed_at else '—' }}
+            </td>
+            <td><span class="badge bg-secondary" style="font-size:0.7rem">{{ h.proposal_type or '—' }}</span></td>
+            <td class="small">{{ h.description }}</td>
+            <td>
+              {% if h.confidence == 'HIGH' %}
+                <span class="text-success fw-semibold small">HIGH</span>
+              {% elif h.confidence == 'MEDIUM' %}
+                <span class="text-warning fw-semibold small">MED</span>
+              {% else %}
+                <span class="text-muted small">LOW</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if h.status == 'approved' %}
+                <span class="badge bg-success">✅ Approved</span>
+              {% else %}
+                <span class="badge bg-danger">❌ Rejected</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+const BASE = "{{ base_url }}";
+
+async function decide(id, action) {
+  const card  = document.getElementById(`card-${id}`);
+  const spin  = document.getElementById(`spin-${id}`);
+  const done  = document.getElementById(`done-${id}`);
+
+  card.querySelectorAll('button').forEach(b => b.disabled = true);
+  spin.classList.remove('d-none');
+
+  try {
+    const res = await fetch(`${BASE}/api/learning/${id}/${action}`, { method: 'POST' });
+    if (!res.ok) throw new Error(await res.text());
+
+    spin.classList.add('d-none');
+    done.textContent = action === 'approve' ? '✅ Approved' : '❌ Rejected';
+    done.classList.remove('d-none');
+
+    // Fade and remove card
+    card.style.transition = 'opacity 0.5s';
+    card.style.opacity = '0';
+    setTimeout(() => {
+      card.remove();
+      // Update badge count
+      const remaining = document.querySelectorAll('.proposal-card').length;
+      const badge = document.querySelector('.badge.fs-6');
+      if (badge) {
+        badge.textContent = remaining > 0
+          ? `${remaining} pending review`
+          : '0 pending';
+        badge.className = remaining > 0
+          ? 'badge bg-warning text-dark fs-6'
+          : 'badge bg-secondary fs-6';
+      }
+    }, 520);
+  } catch (err) {
+    spin.classList.add('d-none');
+    card.querySelectorAll('button').forEach(b => b.disabled = false);
+    alert('Error: ' + err.message);
+  }
+}
+</script>
+{% endblock %}

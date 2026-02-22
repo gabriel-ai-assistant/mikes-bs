@@ -760,3 +760,65 @@ def rescore_preview(session: Session = Depends(db)):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("openclaw.web.app:app", host="0.0.0.0", port=8470, reload=True)
+
+# ──────────────────────────────────────────────────────────────
+# Learning — /learning review page + API endpoints
+# ──────────────────────────────────────────────────────────────
+
+@app.get('/learning', response_class=HTMLResponse)
+def learning_page(request: Request, session: Session = Depends(db)):
+    """Show pending AI proposals for human review."""
+    from sqlalchemy import text as sqlt
+    proposals = session.execute(sqlt("""
+        SELECT * FROM learning_proposals
+        WHERE status = 'pending'
+        ORDER BY
+            CASE confidence WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END,
+            run_date DESC
+    """)).mappings().all()
+
+    history = session.execute(sqlt("""
+        SELECT * FROM learning_proposals
+        WHERE status != 'pending'
+        ORDER BY reviewed_at DESC
+        LIMIT 20
+    """)).mappings().all()
+
+    return templates.TemplateResponse('learning.html', {
+        'request':   request,
+        'proposals': [dict(p) for p in proposals],
+        'history':   [dict(h) for h in history],
+    })
+
+
+@app.post('/api/learning/run-now')
+def run_learning_now(session: Session = Depends(db)):
+    """Trigger the nightly learning run synchronously (for manual use from Settings)."""
+    from openclaw.learning.analyzer import run_nightly_learning
+    count = run_nightly_learning(session=session)
+    return {'ok': True, 'proposals_generated': count}
+
+
+@app.post('/api/learning/{proposal_id}/approve')
+def approve_proposal(proposal_id: int, session: Session = Depends(db)):
+    from sqlalchemy import text as sqlt
+    session.execute(sqlt("""
+        UPDATE learning_proposals
+        SET status = 'approved', reviewed_at = NOW()
+        WHERE id = :id
+    """), {'id': proposal_id})
+    session.commit()
+    return {'ok': True}
+
+
+@app.post('/api/learning/{proposal_id}/reject')
+def reject_proposal(proposal_id: int, session: Session = Depends(db)):
+    from sqlalchemy import text as sqlt
+    session.execute(sqlt("""
+        UPDATE learning_proposals
+        SET status = 'rejected', reviewed_at = NOW()
+        WHERE id = :id
+    """), {'id': proposal_id})
+    session.commit()
+    return {'ok': True}
+

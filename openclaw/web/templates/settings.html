@@ -136,6 +136,30 @@
   </div>
 </div>
 
+
+<!-- AI Learning -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-start">
+      <div>
+        <h5 class="fw-bold mb-1">🧠 AI Learning</h5>
+        <p class="text-muted mb-0 small">Run the nightly feedback analyzer now to generate scoring proposals for review.</p>
+      </div>
+      <div class="d-flex align-items-center gap-3">
+        <span id="learningResult" class="small fw-semibold"></span>
+        <button class="btn btn-primary" id="learnBtn" onclick="runLearning()">
+          <span id="learnBtnText">🧠 Trigger Learning Now</span>
+          <span class="spinner-border spinner-border-sm d-none" id="learnSpinner"></span>
+        </button>
+      </div>
+    </div>
+    <div class="mt-2 small text-muted">
+      Proposals appear at <a href="{{ base_url }}/learning">🧠 Learning</a> for review.
+      Nightly job runs automatically at 02:00 UTC.
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -283,5 +307,42 @@ async function runRescore() {
 
 // Load on page open
 loadRules();
+
+async function runLearning() {
+  const btn    = document.getElementById('learnBtn');
+  const txt    = document.getElementById('learnBtnText');
+  const spin   = document.getElementById('learnSpinner');
+  const result = document.getElementById('learningResult');
+
+  btn.disabled = true;
+  txt.textContent = 'Running…';
+  spin.classList.remove('d-none');
+  result.textContent = '';
+  result.className = 'small fw-semibold';
+
+  try {
+    const res  = await fetch(BASE + '/api/learning/run-now', { method: 'POST' });
+    const data = await res.json();
+
+    spin.classList.add('d-none');
+    txt.textContent = '🧠 Trigger Learning Now';
+    btn.disabled = false;
+
+    if (data.proposals_generated === 0) {
+      result.textContent = 'Not enough feedback yet (need ≥3)';
+      result.classList.add('text-muted');
+    } else {
+      result.textContent = '✅ ' + data.proposals_generated + ' new proposal' + (data.proposals_generated !== 1 ? 's' : '') + ' generated!';
+      result.classList.add('text-success');
+    }
+  } catch (err) {
+    spin.classList.add('d-none');
+    txt.textContent = '🧠 Trigger Learning Now';
+    btn.disabled = false;
+    result.textContent = 'Error: ' + err.message;
+    result.classList.add('text-danger');
+  }
+}
+
 </script>
 {% endblock %}
