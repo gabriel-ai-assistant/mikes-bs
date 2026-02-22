@@ -22,7 +22,7 @@ from openclaw.db.models import (
     Reminder,
     ReminderStatusEnum,
 )
-from openclaw.enrich.pipeline import run_lead_enrichment
+from openclaw.enrich.pipeline import run_lead_enrichment, run_lead_osint
 from openclaw.web.common import LEAD_STATUSES, db, templates
 
 router = APIRouter()
@@ -198,6 +198,7 @@ def lead_detail_page(lead_id: str, request: Request, session: Session = Depends(
             "method_values": [m.value for m in ContactMethodEnum],
             "outcome_values": [o.value for o in ContactOutcomeEnum],
             "osint_ui_link": _osint_ui_link(lead),
+            "osint_enabled": bool(settings.OSINT_ENABLED),
             "pending_reminders": pending_reminders,
             "now_utc": datetime.utcnow(),
         },
@@ -285,6 +286,35 @@ async def enrich_lead(lead_id: str, request: Request, background_tasks: Backgrou
     user_id = _parse_user_id(request)
     background_tasks.add_task(run_lead_enrichment, str(lead.id), user_id, provider)
     return {"ok": True, "queued": True, "provider": provider}
+
+
+@router.get("/api/leads/{lead_id}/osint")
+def get_lead_osint(lead_id: str, session: Session = Depends(db)):
+    lead = session.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return {
+        "ok": True,
+        "enabled": bool(settings.OSINT_ENABLED),
+        "investigation_id": lead.osint_investigation_id,
+        "status": lead.osint_status,
+        "summary": lead.osint_summary,
+        "queried_at": lead.osint_queried_at.isoformat() if lead.osint_queried_at else None,
+        "ui_url": _osint_ui_link(lead),
+    }
+
+
+@router.post("/api/leads/{lead_id}/osint")
+def run_lead_osint_endpoint(lead_id: str, request: Request):
+    if not settings.OSINT_ENABLED:
+        return JSONResponse({"error": "OSINT disabled"}, status_code=503)
+    user_id = _parse_user_id(request)
+    result = run_lead_osint(lead_id, triggered_by=user_id, require_health=True)
+    if not result.get("ok"):
+        error = result.get("error") or "OSINT execution failed"
+        status_code = 404 if error == "not found" else 503
+        return JSONResponse({"error": error}, status_code=status_code)
+    return result
 
 
 @router.delete("/api/leads/{lead_id}/enrichment")

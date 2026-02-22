@@ -53,6 +53,7 @@
     </div>
   </div>
 
+  {% if osint_enabled %}
   <div class="col-12 col-lg-6">
     <div class="card border-0 shadow-sm">
       <div class="card-header bg-transparent fw-bold">OSINT</div>
@@ -67,7 +68,7 @@
         </div>
         <div class="mt-2">{{ lead.osint_summary or 'No OSINT summary yet.' }}</div>
         <div class="mt-2 d-flex gap-2">
-          <button class="btn btn-sm btn-outline-primary" onclick="triggerEnrich('osint')">Run OSINT</button>
+          <button class="btn btn-sm btn-outline-primary" onclick="triggerOsint()">{% if os == 'failed' %}Retry OSINT{% else %}Run OSINT{% endif %}</button>
           {% if osint_ui_link %}
           <a class="btn btn-sm btn-outline-secondary" href="{{ osint_ui_link }}" target="_blank" rel="noopener noreferrer">Open OSINT UI</a>
           {% endif %}
@@ -75,6 +76,7 @@
       </div>
     </div>
   </div>
+  {% endif %}
 
   <div class="col-12">
     <div class="card border-0 shadow-sm">
@@ -213,6 +215,17 @@ async function triggerEnrich(provider='') {
     return;
   }
   alert('Enrichment queued. Refresh shortly.');
+}
+
+async function triggerOsint() {
+  const res = await fetch(`${BASE}/api/leads/${LEAD_ID}/osint`, {method: 'POST'});
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    alert(data.error || 'OSINT failed');
+    return;
+  }
+  alert(`OSINT ${data.status || 'complete'}: ${data.summary || 'Done'}`);
+  location.reload();
 }
 
 async function deleteEnrichment() {

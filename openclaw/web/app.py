@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from openclaw.db.models import Candidate, Lead, Parcel, ScoreTierEnum
 from openclaw.config import settings as app_settings
+from openclaw.enrich.pipeline import run_osint_batch_backfill
 from openclaw.web.reminders import process_due_reminders
 from openclaw.web.common import BASE_DIR, ROOT_PATH, db, templates
 from openclaw.web.auth_utils import seed_admin_user
@@ -58,6 +59,15 @@ def _seed_auth_defaults() -> None:
             id="process_due_reminders",
             replace_existing=True,
         )
+        if app_settings.OSINT_ENABLED and app_settings.OSINT_BATCH_ENABLED:
+            _scheduler.add_job(
+                run_osint_batch_backfill,
+                "cron",
+                hour=3,
+                minute=0,
+                id="osint_batch_backfill",
+                replace_existing=True,
+            )
         _scheduler.start()
 
 
