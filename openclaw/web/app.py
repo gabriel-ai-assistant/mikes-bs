@@ -107,6 +107,7 @@ def candidates_page(
     sort: str = Query("splits", alias="sort"),
     wetland: str = Query("", alias="wetland"),
     ag: str = Query("", alias="ag"),
+    use_type: str = Query("", alias="use_type"),
     tags: Optional[str] = Query(None, alias="tags"),
     tags_mode: str = Query("any", alias="tags_mode"),
     session: Session = Depends(db),
@@ -128,6 +129,8 @@ def candidates_page(
         q = q.filter(Candidate.has_critical_area_overlap == True)
     if ag == "1":
         q = q.filter(Candidate.flagged_for_review == True)
+    if use_type:
+        q = q.filter(Parcel.present_use.ilike(f"%{use_type}%"))
     if tags:
         tags_list = [t.strip() for t in tags.split(",") if t.strip()]
         if tags_list:
@@ -163,6 +166,7 @@ def candidates_page(
         "zone_labels": zone_labels,
         "search": search, "tier": tier, "sort": sort,
         "wetland": wetland, "ag": ag,
+        "use_type": use_type,
         "tags": tags or "", "tags_mode": tags_mode,
     })
 
@@ -187,6 +191,7 @@ def get_candidates_api(
     sort: str = Query("splits", alias="sort"),
     wetland: str = Query("", alias="wetland"),
     ag: str = Query("", alias="ag"),
+    use_type: str = Query("", alias="use_type"),
     tags: Optional[str] = Query(None, alias="tags"),
     tags_mode: str = Query("any", alias="tags_mode"),
     limit: int = Query(500),
@@ -215,6 +220,8 @@ def get_candidates_api(
         q = q.filter(Candidate.has_critical_area_overlap == True)
     if ag == "1":
         q = q.filter(Candidate.flagged_for_review == True)
+    if use_type:
+        q = q.filter(Parcel.present_use.ilike(f"%{use_type}%"))
     if tags:
         tags_list = [t.strip() for t in tags.split(",") if t.strip()]
         if tags_list:
@@ -246,6 +253,7 @@ def get_candidates_api(
                 "address": c.parcel.address,
                 "owner": c.parcel.owner_name,
                 "tier": c.score_tier.value if c.score_tier else None,
+                "use_type": c.parcel.present_use,
                 "splits": c.potential_splits,
                 "splits_min": c.splits_min,
                 "splits_max": c.splits_max,
@@ -260,6 +268,19 @@ def get_candidates_api(
             for c, lat, lng in rows
         ]
     }
+
+
+@app.get("/api/use-types")
+def get_use_types(session: Session = Depends(db)):
+    rows = (
+        session.query(Parcel.present_use)
+        .filter(Parcel.present_use.isnot(None))
+        .filter(Parcel.present_use != "")
+        .distinct()
+        .order_by(Parcel.present_use.asc())
+        .all()
+    )
+    return {"use_types": [r[0] for r in rows]}
 
 
 # ── Candidate detail API ───────────────────────────────────────────────────

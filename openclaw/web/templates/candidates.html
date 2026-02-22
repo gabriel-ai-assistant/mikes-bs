@@ -28,6 +28,11 @@
           <option value="F" {% if tier=='F' %}selected{% endif %}>⚫ Tier F</option>
         </select>
       </div>
+      <div class="col-12 col-md-3">
+        <select name="use_type" id="useTypeSelect" class="form-select">
+          <option value="">All Use Types</option>
+        </select>
+      </div>
       <div class="col-6 col-md-2">
         <select name="sort" class="form-select">
           <option value="splits" {% if sort=='splits' %}selected{% endif %}>Most Splits</option>
@@ -105,6 +110,7 @@
           <th>Splits</th>
           <th>Land Value</th>
           <th>Flags</th>
+          <th>Use Type</th>
           <th></th>
         </tr>
       </thead>
@@ -164,6 +170,13 @@
               {% if chip_map.get(t) %}<span class="badge bg-secondary">{{ chip_map[t] }}</span>{% endif %}
             {% endfor %}
           </td>
+          <td class="small" title="{{ p.present_use or '' }}">
+            {% if p.present_use %}
+              {{ p.present_use | truncate(30, True, '...') }}
+            {% else %}
+              —
+            {% endif %}
+          </td>
           <td>
             <div class="d-flex gap-1">
               <button class="btn btn-sm btn-outline-primary py-0"
@@ -173,7 +186,7 @@
         </tr>
         {% endfor %}
         {% if not candidates %}
-        <tr><td colspan="10" class="text-center text-muted py-4">No candidates match your filters.</td></tr>
+        <tr><td colspan="11" class="text-center text-muted py-4">No candidates match your filters.</td></tr>
         {% endif %}
       </tbody>
     </table>
@@ -210,6 +223,7 @@ let _selectedTags = new Set(
   "{{ tags }}".split(",").map(t => t.trim()).filter(t => t.length > 0)
 );
 let _allTagData = [];
+const _currentUseType = {{ (use_type or "") | tojson }};
 
 function tagColor(tag) {
   if (tag.startsWith('EDGE_')) return {bg:'#d1fae5',text:'#065f46',border:'#6ee7b7'};
@@ -314,6 +328,32 @@ async function loadTags() {
   }
 }
 
+async function loadUseTypes() {
+  const select = document.getElementById('useTypeSelect');
+  if (!select) return;
+  try {
+    const data = await fetch(`${BASE}/api/use-types`).then(r => r.json());
+    select.innerHTML = '';
+    const allOpt = document.createElement('option');
+    allOpt.value = '';
+    allOpt.textContent = 'All Use Types';
+    select.appendChild(allOpt);
+    (data.use_types || []).forEach((useType) => {
+      const opt = document.createElement('option');
+      opt.value = useType;
+      opt.textContent = useType;
+      select.appendChild(opt);
+    });
+    select.value = _currentUseType;
+  } catch (e) {
+    select.innerHTML = '';
+    const opt = document.createElement('option');
+    opt.value = _currentUseType;
+    opt.textContent = _currentUseType || 'All Use Types';
+    select.appendChild(opt);
+  }
+}
+
 function applyTagFilter() {
   document.getElementById('hiddenTags').value = Array.from(_selectedTags).join(',');
   document.getElementById('hiddenTagsMode').value = document.getElementById('modeAll').checked ? 'all' : 'any';
@@ -339,6 +379,14 @@ function clearTagFilter() {
 
 // Load tags on page load
 loadTags();
+loadUseTypes();
+
+const useTypeSelect = document.getElementById('useTypeSelect');
+if (useTypeSelect) {
+  useTypeSelect.addEventListener('change', () => {
+    document.getElementById('filterForm').submit();
+  });
+}
 
 // ── Original script globals ────────────────────────────────────────────────
 const modal = new bootstrap.Modal(document.getElementById('detailModal'));
