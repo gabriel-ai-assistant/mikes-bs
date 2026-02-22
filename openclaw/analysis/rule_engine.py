@@ -27,11 +27,11 @@ FLAGS_WEIGHT = 20       # up to -20 from flags
 
 # Tier cutoffs (score → tier)
 TIER_CUTOFFS = [
-    (80, 'A'),
-    (65, 'B'),
-    (50, 'C'),
-    (35, 'D'),
-    (20, 'E'),
+    (72, 'A'),
+    (58, 'B'),
+    (44, 'C'),
+    (30, 'D'),
+    (16, 'E'),
     (0,  'F'),
 ]
 
