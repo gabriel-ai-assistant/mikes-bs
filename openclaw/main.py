@@ -21,14 +21,11 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from openclaw.analysis.scorer import run_scoring
 from openclaw.discovery.engine import run_discovery
 from openclaw.ingest.delta_sync import run_delta_sync
+from openclaw.logging_utils import configure_logging
 from openclaw.notify.digest import send_digest
 from openclaw.learning.analyzer import run_nightly_learning
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)-8s %(name)s — %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+configure_logging(logging.INFO)
 logger = logging.getLogger("openclaw.main")
 
 

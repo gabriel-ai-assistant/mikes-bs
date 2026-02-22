@@ -15,10 +15,13 @@ from sqlalchemy.orm import Session, joinedload
 from openclaw.db.models import Candidate, Lead, Parcel, ScoreTierEnum
 from openclaw.config import settings as app_settings
 from openclaw.enrich.pipeline import run_osint_batch_backfill
+from openclaw.logging_utils import configure_logging
 from openclaw.web.reminders import process_due_reminders
 from openclaw.web.common import BASE_DIR, ROOT_PATH, db, templates
 from openclaw.web.auth_utils import seed_admin_user
 from openclaw.web.routers import auth, candidates, feasibility, leads, learning, map, scoring, settings
+
+configure_logging()
 
 app = FastAPI(title="Mike's Building System", docs_url=None, redoc_url=None, root_path=ROOT_PATH)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")

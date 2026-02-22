@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -14,6 +15,9 @@ from openclaw.analysis.bundle_detection import (
     should_invalidate_bundle,
 )
 from openclaw.db.models import Candidate
+from openclaw.logging_utils import log_event
+
+logger = logging.getLogger(__name__)
 
 
 def _adjacent_rows(session: Session, parcel_uuid: str) -> list[dict]:
@@ -43,10 +47,17 @@ def _adjacent_rows(session: Session, parcel_uuid: str) -> list[dict]:
 def detect_bundle_for_candidate(session: Session, candidate_id: str) -> dict | None:
     candidate = session.query(Candidate).filter(Candidate.id == candidate_id).first()
     if not candidate or not candidate.parcel:
+        log_event(logger, "bundle.detect.not_found", candidate_id=str(candidate_id))
         return None
 
     owner_name, match_basis = canonical_owner_name(candidate.parcel.owner_name)
     if not owner_name:
+        log_event(
+            logger,
+            "bundle.detect.skipped.no_owner",
+            candidate_id=str(candidate_id),
+            parcel_id=str(candidate.parcel.parcel_id),
+        )
         return None
 
     previous_owner = candidate.owner_name_canonical
@@ -57,10 +68,26 @@ def detect_bundle_for_candidate(session: Session, candidate_id: str) -> dict | N
         candidate.bundle_data = None
 
     if candidate.bundle_data and not is_bundle_stale(candidate.bundle_data):
+        cached_parcels = candidate.bundle_data.get("parcels") if isinstance(candidate.bundle_data, dict) else []
+        log_event(
+            logger,
+            "bundle.detect.cache_hit",
+            candidate_id=str(candidate.id),
+            parcel_id=str(candidate.parcel.parcel_id),
+            parcel_count=len(cached_parcels or []),
+            stale=False,
+        )
         return candidate.bundle_data
 
     base_zip = extract_zip(candidate.parcel.owner_address)
     neighbors = _adjacent_rows(session, str(candidate.parcel_id))
+    log_event(
+        logger,
+        "bundle.detect.neighbors_scanned",
+        candidate_id=str(candidate.id),
+        parcel_id=str(candidate.parcel.parcel_id),
+        neighbors_found=len(neighbors),
+    )
 
     parcels = []
     match_tier = "exact"
@@ -121,4 +148,15 @@ def detect_bundle_for_candidate(session: Session, candidate_id: str) -> dict | N
     candidate.bundle_data = payload
     candidate.tags = sorted(tags)
     session.commit()
+    log_event(
+        logger,
+        "bundle.detect.completed",
+        candidate_id=str(candidate.id),
+        parcel_id=str(candidate.parcel.parcel_id),
+        match_tier=match_tier,
+        match_basis=match_basis,
+        similarity_score=payload["similarity_score"],
+        parcels_in_bundle=len(payload["parcels"]),
+        neighbors_found=len(neighbors),
+    )
     return payload

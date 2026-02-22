@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 from collections import defaultdict
 from datetime import datetime
 
@@ -23,9 +24,11 @@ from openclaw.db.models import (
     ReminderStatusEnum,
 )
 from openclaw.enrich.pipeline import run_lead_enrichment, run_lead_osint
+from openclaw.logging_utils import log_event
 from openclaw.web.common import LEAD_STATUSES, db, templates
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 STATUS_LABELS = {
@@ -232,6 +235,13 @@ async def promote_to_lead(request: Request, background_tasks: BackgroundTasks, s
         .first()
     )
     if existing:
+        log_event(
+            logger,
+            "lead.promote.skipped.exists",
+            candidate_id=str(candidate.id),
+            lead_id=str(existing.id),
+            status=str(existing.status),
+        )
         return JSONResponse(
             {
                 "error": "lead already exists for candidate",
@@ -263,8 +273,24 @@ async def promote_to_lead(request: Request, background_tasks: BackgroundTasks, s
     session.add(lead)
     session.commit()
     session.refresh(lead)
+    log_event(
+        logger,
+        "lead.promoted",
+        lead_id=str(lead.id),
+        candidate_id=str(candidate.id),
+        triggered_by=user_id,
+        reason=bool(reason),
+        has_bundle=bool(candidate.bundle_data),
+    )
 
     background_tasks.add_task(run_lead_enrichment, str(lead.id), user_id, None)
+    log_event(
+        logger,
+        "lead.enrichment.triggered",
+        lead_id=str(lead.id),
+        triggered_by=user_id,
+        provider=None,
+    )
 
     return {
         "ok": True,
@@ -285,6 +311,13 @@ async def enrich_lead(lead_id: str, request: Request, background_tasks: Backgrou
         provider = (body.get("provider") or "").strip() or None
     user_id = _parse_user_id(request)
     background_tasks.add_task(run_lead_enrichment, str(lead.id), user_id, provider)
+    log_event(
+        logger,
+        "lead.enrichment.triggered",
+        lead_id=str(lead.id),
+        triggered_by=user_id,
+        provider=provider or "all",
+    )
     return {"ok": True, "queued": True, "provider": provider}
 
 
@@ -309,6 +342,13 @@ def run_lead_osint_endpoint(lead_id: str, request: Request):
     if not settings.OSINT_ENABLED:
         return JSONResponse({"error": "OSINT disabled"}, status_code=503)
     user_id = _parse_user_id(request)
+    log_event(
+        logger,
+        "lead.osint.triggered",
+        lead_id=str(lead_id),
+        triggered_by=user_id,
+        require_health=True,
+    )
     result = run_lead_osint(lead_id, triggered_by=user_id, require_health=True)
     if not result.get("ok"):
         error = result.get("error") or "OSINT execution failed"
@@ -378,6 +418,15 @@ async def add_contact_log(lead_id: str, request: Request, session: Session = Dep
     session.add(lead)
     session.commit()
     session.refresh(row)
+    log_event(
+        logger,
+        "lead.contact_log.created",
+        lead_id=str(lead.id),
+        entry_id=row.id,
+        user_id=user_id,
+        method=method,
+        outcome=outcome,
+    )
 
     return {
         "ok": True,
@@ -427,9 +476,17 @@ def update_lead_status(lead_id: str, status: str = Query(...), session: Session 
     if status not in LEAD_STATUSES:
         return JSONResponse({"error": "invalid status"}, status_code=400)
 
+    old_status = lead.status
     lead.status = status
     session.add(lead)
     session.commit()
+    log_event(
+        logger,
+        "lead.status.changed",
+        lead_id=str(lead.id),
+        previous_status=str(old_status),
+        new_status=status,
+    )
     return {"ok": True}
 
 
@@ -464,6 +521,13 @@ async def create_lead_reminder(lead_id: str, request: Request, session: Session 
     session.add(reminder)
     session.commit()
     session.refresh(reminder)
+    log_event(
+        logger,
+        "lead.reminder.created",
+        lead_id=str(lead.id),
+        reminder_id=reminder.id,
+        user_id=user_id,
+    )
     return {
         "ok": True,
         "id": reminder.id,
@@ -491,6 +555,13 @@ def dismiss_reminder(reminder_id: int, request: Request, session: Session = Depe
     reminder.status = ReminderStatusEnum.dismissed
     session.add(reminder)
     session.commit()
+    log_event(
+        logger,
+        "lead.reminder.dismissed",
+        reminder_id=reminder.id,
+        lead_id=str(reminder.lead_id),
+        user_id=user_id,
+    )
     return {"ok": True}
 
 
@@ -639,4 +710,14 @@ def export_leads_csv(
     response.headers["X-Export-Returned"] = str(len(csv_rows))
     response.headers["X-Export-Truncated"] = "1" if total > max_rows else "0"
     response.headers["Cache-Control"] = "no-store"
+    log_event(
+        logger,
+        "export.leads.csv",
+        user_id=_parse_user_id(request),
+        status_filter=status,
+        row_count=len(csv_rows),
+        total_matches=total,
+        truncated=bool(total > max_rows),
+        selected_columns=selected,
+    )
     return response

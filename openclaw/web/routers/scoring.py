@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
@@ -11,9 +12,11 @@ from sqlalchemy import func, text
 
 from openclaw.analysis.rule_engine import evaluate_candidate, load_rules, rescore_all, score_candidate
 from openclaw.db.models import Candidate, CandidateFeedback, ScoringRule
+from openclaw.logging_utils import log_event
 from openclaw.web.common import db
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 VOTE_META_PREFIX = "__vote_meta__:"
 
 
@@ -119,6 +122,16 @@ async def submit_feedback(
 
     session.commit()
     summary = _feedback_summary(session, candidate_id, actor_key)
+    log_event(
+        logger,
+        "vote.candidate.updated",
+        candidate_id=str(candidate_id),
+        actor=actor_key,
+        requested_vote=rating_value,
+        toggled_off=bool(should_toggle_off),
+        active_vote=summary["user_vote"],
+        net_votes=summary["net_votes"],
+    )
     return {
         "ok": True,
         "active": summary["user_vote"],

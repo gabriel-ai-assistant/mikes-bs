@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import logging
 from datetime import datetime
 from urllib.parse import quote
 
@@ -17,9 +18,11 @@ from openclaw.analysis.bundles_service import detect_bundle_for_candidate
 from openclaw.config import settings
 from openclaw.db.models import Candidate, CandidateFeedback, CandidateNote, Lead, Parcel, ScoreTierEnum, ZoningRule
 from openclaw.enrich.pipeline import run_lead_enrichment
+from openclaw.logging_utils import log_event
 from openclaw.web.common import db, fmt_acres, fmt_money, fmt_sqft, templates
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 VOTE_META_PREFIX = "__vote_meta__:"
 
 
@@ -587,6 +590,15 @@ async def bulk_vote_candidates(request: Request, session: Session = Depends(db))
         success.append(candidate_id)
 
     session.commit()
+    log_event(
+        logger,
+        "bulk.vote.completed",
+        action=action,
+        requested_count=len(ids),
+        success_count=len(success),
+        failure_count=len(failed),
+        user_id=_parse_user_id(request),
+    )
     return {"ok": True, "success_ids": success, "failed": failed}
 
 
@@ -622,6 +634,16 @@ async def bulk_tag_candidates(request: Request, session: Session = Depends(db)):
         failed.append({"candidate_id": candidate_id, "error": "not found"})
 
     session.commit()
+    log_event(
+        logger,
+        "bulk.tag.completed",
+        action=action,
+        tags=tags,
+        requested_count=len(ids),
+        success_count=len(success),
+        failure_count=len(failed),
+        user_id=_parse_user_id(request),
+    )
     return {"ok": True, "success_ids": success, "failed": failed}
 
 
@@ -694,6 +716,22 @@ async def bulk_promote_candidates(
         background_tasks.add_task(run_lead_enrichment, str(lead.id), user_id, None)
 
     session.commit()
+    log_event(
+        logger,
+        "bulk.promote.completed",
+        requested_count=len(ids),
+        created_count=len(created),
+        failure_count=len(failed),
+        user_id=user_id,
+    )
+    if created:
+        log_event(
+            logger,
+            "lead.bulk_promoted",
+            lead_count=len(created),
+            candidate_ids=[row["candidate_id"] for row in created],
+            triggered_by=user_id,
+        )
     return {"ok": True, "created": created, "failed": failed}
 
 
@@ -787,6 +825,15 @@ def export_candidates_csv(request: Request, format: str = Query("csv"), columns:
     response.headers["X-Export-Returned"] = str(len(csv_rows))
     response.headers["X-Export-Truncated"] = "1" if total > max_rows else "0"
     response.headers["Cache-Control"] = "no-store"
+    log_event(
+        logger,
+        "export.candidates.csv",
+        user_id=_parse_user_id(request),
+        row_count=len(csv_rows),
+        total_matches=total,
+        truncated=bool(total > max_rows),
+        selected_columns=selected,
+    )
     return response
 
 
@@ -1009,5 +1056,14 @@ def get_bundle(candidate_id: str, session: Session = Depends(db)):
 def detect_bundle(candidate_id: str, session: Session = Depends(db)):
     payload = detect_bundle_for_candidate(session, candidate_id)
     if payload is None:
+        log_event(logger, "bundle.detect.request.not_found", candidate_id=str(candidate_id))
         return JSONResponse({"error": "candidate not found"}, status_code=404)
+    log_event(
+        logger,
+        "bundle.detect.request.completed",
+        candidate_id=str(candidate_id),
+        parcel_count=len(payload.get("parcels") or []),
+        match_tier=payload.get("match_tier"),
+        stale=bool(payload.get("stale")),
+    )
     return payload
