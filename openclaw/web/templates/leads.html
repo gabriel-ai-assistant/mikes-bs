@@ -14,6 +14,10 @@
 </style>
 {% endblock %}
 {% block content %}
+<div class="d-flex justify-content-end gap-2 mb-2">
+  <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#leadExportColumnsModal">Export Columns</button>
+  <button class="btn btn-sm btn-outline-success" type="button" onclick="exportLeadsCsv()">Export Leads CSV</button>
+</div>
 {% set has_any = columns.values()|map('length')|sum > 0 %}
 {% if not has_any %}
 <div class="empty-state"><i class="bi bi-kanban"></i><h4>No leads yet</h4><p>Leads are created from candidates. Run the pipeline first.</p></div>
@@ -51,13 +55,108 @@
 {% endfor %}
 </div>
 {% endif %}
+
+<div class="modal fade" id="leadExportColumnsModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Lead Export Columns</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="leadExportColumnsBody"></div>
+      <div class="modal-footer">
+        <button class="btn btn-sm btn-outline-secondary" type="button" onclick="resetLeadExportColumns()">Reset</button>
+        <button class="btn btn-sm btn-primary" type="button" data-bs-dismiss="modal">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
 const BASE = "{{ base_url }}";
+const LEAD_EXPORT_COLUMNS_KEY = 'lead_export_columns';
+const LEAD_EXPORT_REGISTRY = [
+  {key: 'lead_id', label: 'Lead ID', default: true},
+  {key: 'status', label: 'Status', default: true},
+  {key: 'address', label: 'Address', default: true},
+  {key: 'owner_name', label: 'Owner', default: true},
+  {key: 'score_at_promotion', label: 'Score At Promotion', default: true},
+  {key: 'reason', label: 'Promotion Reason', default: false},
+  {key: 'owner_phone', label: 'Owner Phone', default: true},
+  {key: 'owner_email', label: 'Owner Email', default: true},
+  {key: 'enrichment_phone', label: 'Enrichment Phone', default: true},
+  {key: 'enrichment_email', label: 'Enrichment Email', default: true},
+  {key: 'osint_status', label: 'OSINT Status', default: true},
+  {key: 'osint_summary', label: 'OSINT Summary', default: true},
+  {key: 'promoted_at', label: 'Promoted At', default: false},
+  {key: 'updated_at', label: 'Updated At', default: true},
+];
+
+function defaultLeadExportColumns() {
+  return LEAD_EXPORT_REGISTRY.filter((c) => c.default).map((c) => c.key);
+}
+
+function getLeadExportColumns() {
+  try {
+    const raw = localStorage.getItem(LEAD_EXPORT_COLUMNS_KEY);
+    if (!raw) return defaultLeadExportColumns();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return defaultLeadExportColumns();
+    const valid = parsed.filter((k) => LEAD_EXPORT_REGISTRY.some((c) => c.key === k));
+    return valid.length ? valid : defaultLeadExportColumns();
+  } catch (e) {
+    return defaultLeadExportColumns();
+  }
+}
+
+function setLeadExportColumns(cols) {
+  localStorage.setItem(LEAD_EXPORT_COLUMNS_KEY, JSON.stringify(cols));
+}
+
+function renderLeadExportColumns() {
+  const selected = new Set(getLeadExportColumns());
+  const container = document.getElementById('leadExportColumnsBody');
+  if (!container) return;
+  container.innerHTML = '';
+  LEAD_EXPORT_REGISTRY.forEach((col) => {
+    const row = document.createElement('label');
+    row.className = 'form-check d-flex align-items-center gap-2 mb-2';
+    row.innerHTML = `<input type="checkbox" class="form-check-input" value="${col.key}" ${selected.has(col.key) ? 'checked' : ''}><span>${col.label}</span>`;
+    const input = row.querySelector('input');
+    input.addEventListener('change', () => {
+      const now = new Set(getLeadExportColumns());
+      if (input.checked) now.add(col.key);
+      else now.delete(col.key);
+      setLeadExportColumns(Array.from(now));
+    });
+    container.appendChild(row);
+  });
+}
+
+function resetLeadExportColumns() {
+  setLeadExportColumns(defaultLeadExportColumns());
+  renderLeadExportColumns();
+}
+
 function updateStatus(id,status){
   fetch(BASE+'/api/lead/'+id+'/status?status='+status,{method:'POST'}).then(()=>location.reload());
 }
+
+function exportLeadsCsv() {
+  const columns = getLeadExportColumns();
+  const hasPii = columns.includes('owner_phone') || columns.includes('owner_email') || columns.includes('enrichment_phone') || columns.includes('enrichment_email');
+  if (hasPii) {
+    const ok = confirm('This export may contain PII (phone/email enrichment data). Continue?');
+    if (!ok) return;
+  }
+  const params = new URLSearchParams();
+  params.set('format', 'csv');
+  params.set('columns', columns.join(','));
+  window.location.href = `${BASE}/api/leads/export?${params.toString()}`;
+}
+
+renderLeadExportColumns();
 </script>
 {% endblock %}

@@ -79,6 +79,12 @@ class ContactOutcomeEnum(enum.Enum):
     other = "other"
 
 
+class ReminderStatusEnum(enum.Enum):
+    pending = "pending"
+    sent = "sent"
+    dismissed = "dismissed"
+
+
 class Parcel(Base):
     __tablename__ = "parcels"
     __table_args__ = (UniqueConstraint("parcel_id", "county", name="uq_parcel_county"),)
@@ -187,6 +193,7 @@ class Lead(Base):
     promoted_by_user = relationship("User", back_populates="promoted_leads")
     enrichment_results = relationship("EnrichmentResult", back_populates="lead", cascade="all, delete-orphan")
     contact_log_entries = relationship("LeadContactLog", back_populates="lead", cascade="all, delete-orphan")
+    reminders = relationship("Reminder", back_populates="lead", cascade="all, delete-orphan")
 
     @validates("status")
     def validate_status(self, _key, value):
@@ -267,6 +274,7 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     promoted_leads = relationship("Lead", back_populates="promoted_by_user")
     lead_contact_logs = relationship("LeadContactLog", back_populates="user")
+    reminders = relationship("Reminder", back_populates="user")
 
     @validates("role")
     def validate_role(self, _key, value):
@@ -355,3 +363,23 @@ class LeadContactLog(Base):
 
     lead = relationship("Lead", back_populates="contact_log_entries")
     user = relationship("User", back_populates="lead_contact_logs")
+
+
+class Reminder(Base):
+    __tablename__ = "reminders"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    lead_id = Column(UUID(as_uuid=True), ForeignKey("leads.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    remind_at = Column(DateTime, nullable=False, index=True)
+    message = Column(Text)
+    status = Column(
+        Enum(ReminderStatusEnum, name="reminder_status_enum", create_type=False),
+        nullable=False,
+        default=ReminderStatusEnum.pending,
+        index=True,
+    )
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    lead = relationship("Lead", back_populates="reminders")
+    user = relationship("User", back_populates="reminders")

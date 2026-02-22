@@ -30,6 +30,15 @@
     min-width: 320px;
     max-width: 380px;
   }
+  tr.bulk-selected {
+    background: #e7f1ff;
+  }
+  .bulk-toolbar {
+    border: 1px solid #dbeafe;
+    background: #f8fbff;
+    border-radius: 10px;
+    padding: 8px 10px;
+  }
   @media (max-width: 767px) {
     .column-chooser {
       display: none;
@@ -147,8 +156,26 @@
   <span class="text-muted small" id="resultCount">Showing <strong>{{ rows|length }}</strong> results</span>
   <div class="d-flex align-items-center gap-2 position-relative">
     <a href="{{ base_url }}/map" class="btn btn-sm btn-outline-secondary">🗺️ View on Map</a>
+    <button class="btn btn-sm btn-outline-success" type="button" onclick="exportCandidatesCsv()">Export CSV</button>
     <button class="btn btn-sm btn-outline-secondary" id="columnGearBtn" type="button" aria-label="Columns">⚙️ Columns</button>
     <div class="card border-0 shadow-sm p-2 position-absolute column-chooser" id="columnChooserPanel" style="display:none;right:0;top:42px;z-index:1000;"></div>
+  </div>
+</div>
+
+<div id="bulkToolbar" class="bulk-toolbar mb-2 d-none">
+  <div class="d-flex flex-wrap align-items-center gap-2">
+    <strong class="small">Selected: <span id="bulkSelectedCount">0</span></strong>
+    <button class="btn btn-sm btn-outline-secondary" type="button" onclick="selectAllOnPage(true)">All On Page</button>
+    <button class="btn btn-sm btn-outline-secondary" type="button" onclick="selectAllMatchingFilter()">All Matching Filter ({{ matching_total or rows|length }})</button>
+    <button class="btn btn-sm btn-outline-secondary" type="button" onclick="clearSelection()">Clear</button>
+    <div class="vr"></div>
+    <button class="btn btn-sm btn-outline-success" type="button" onclick="bulkVote('up')">Bulk Vote Up</button>
+    <button class="btn btn-sm btn-outline-danger" type="button" onclick="bulkVote('down')">Bulk Vote Down</button>
+    <button class="btn btn-sm btn-outline-secondary" type="button" onclick="bulkVote('clear')">Bulk Clear Vote</button>
+    <div class="vr"></div>
+    <button class="btn btn-sm btn-outline-primary" type="button" onclick="bulkTag('add')">Bulk Add Tag</button>
+    <button class="btn btn-sm btn-outline-primary" type="button" onclick="bulkTag('remove')">Bulk Remove Tag</button>
+    <button class="btn btn-sm btn-primary" type="button" onclick="bulkPromote()">Bulk Promote</button>
   </div>
 </div>
 
@@ -157,6 +184,9 @@
     <table class="table table-hover align-middle mb-0" id="candidateTable">
       <thead class="table-dark">
         <tr>
+          <th data-col="bulk_select" style="width:42px">
+            <input type="checkbox" class="form-check-input" id="bulkSelectPage" onchange="toggleHeaderSelection(this.checked)">
+          </th>
           <th data-col="address">Address</th>
           <th data-col="score">Score</th>
           <th data-col="score_tier">Tier</th>
@@ -178,6 +208,9 @@
         {% set p = c.parcel %}
         {% set cid = c.id|string %}
         <tr data-candidate-id="{{ cid }}" data-user-vote="{{ row.user_vote or '' }}">
+          <td data-col="bulk_select">
+            <input type="checkbox" class="form-check-input row-select" value="{{ cid }}" onchange="toggleRowSelection('{{ cid }}', this.checked, true)">
+          </td>
           <td data-col="address" class="fw-semibold">
             <button class="btn btn-link p-0 text-start fw-semibold" onclick="openCandidateModal('{{ cid }}', '{{ p.id }}')">{{ p.address or "—" }}</button>
             <div class="small text-muted">{{ p.owner_name or "—" }}</div>
@@ -240,7 +273,7 @@
         </tr>
         {% endfor %}
         {% if not rows %}
-        <tr><td colspan="13" class="text-center text-muted py-4">No candidates match your filters.</td></tr>
+        <tr><td colspan="14" class="text-center text-muted py-4">No candidates match your filters.</td></tr>
         {% endif %}
       </tbody>
     </table>
@@ -311,6 +344,8 @@
 const BASE = "{{ base_url }}";
 const CURRENT_FILTERS = {{ filters | tojson }};
 const CURRENT_USE_TYPES = {{ filters.use_types | tojson }};
+const MATCHING_TOTAL = Number({{ matching_total or rows|length }});
+const BULK_EXPORT_FETCH_LIMIT = 10000;
 
 const COLUMN_REGISTRY = [
   { key: "address", label: "Address", default: true, order: 0, sortable: true },
@@ -334,6 +369,7 @@ const modal = new bootstrap.Modal(document.getElementById('detailModal'));
 const columnModal = new bootstrap.Modal(document.getElementById('columnChooserModal'));
 const promoteLeadModal = new bootstrap.Modal(document.getElementById('promoteLeadModal'));
 let pendingPromotePayload = null;
+const selectedCandidateIds = new Set();
 
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -564,6 +600,177 @@ async function doRating(candidateId, rating) {
     applyVoteState(candidateId, before);
     alert(`Vote update failed: ${e.message}`);
   }
+}
+
+function selectedIds() {
+  return Array.from(selectedCandidateIds);
+}
+
+function setRowSelectedClass(candidateId, selected) {
+  const row = document.querySelector(`tr[data-candidate-id="${candidateId}"]`);
+  if (!row) return;
+  row.classList.toggle('bulk-selected', !!selected);
+  const checkbox = row.querySelector('.row-select');
+  if (checkbox) checkbox.checked = !!selected;
+}
+
+function updateBulkToolbar() {
+  const count = selectedCandidateIds.size;
+  const toolbar = document.getElementById('bulkToolbar');
+  const countEl = document.getElementById('bulkSelectedCount');
+  if (countEl) countEl.textContent = String(count);
+  if (toolbar) toolbar.classList.toggle('d-none', count < 1);
+  const pageBox = document.getElementById('bulkSelectPage');
+  if (pageBox) {
+    const pageCheckboxes = Array.from(document.querySelectorAll('.row-select'));
+    const selectedOnPage = pageCheckboxes.filter((el) => selectedCandidateIds.has(el.value)).length;
+    pageBox.checked = pageCheckboxes.length > 0 && selectedOnPage === pageCheckboxes.length;
+  }
+}
+
+function toggleRowSelection(candidateId, checked, fromUi=false) {
+  if (checked) selectedCandidateIds.add(candidateId);
+  else selectedCandidateIds.delete(candidateId);
+  if (!fromUi) setRowSelectedClass(candidateId, checked);
+  updateBulkToolbar();
+}
+
+function toggleHeaderSelection(checked) {
+  selectAllOnPage(checked);
+}
+
+function selectAllOnPage(checked=true) {
+  document.querySelectorAll('.row-select').forEach((el) => {
+    if (checked) selectedCandidateIds.add(el.value);
+    else selectedCandidateIds.delete(el.value);
+    setRowSelectedClass(el.value, checked);
+  });
+  updateBulkToolbar();
+}
+
+function clearSelection() {
+  selectedCandidateIds.clear();
+  document.querySelectorAll('.row-select').forEach((el) => setRowSelectedClass(el.value, false));
+  updateBulkToolbar();
+}
+
+async function selectAllMatchingFilter() {
+  const params = new URLSearchParams(window.location.search);
+  params.set('page', '1');
+  params.set('offset', '0');
+  params.set('limit', String(BULK_EXPORT_FETCH_LIMIT));
+  const resp = await fetch(`${BASE}/api/candidates?${params.toString()}`);
+  const data = await resp.json();
+  (data.candidates || []).forEach((c) => selectedCandidateIds.add(String(c.id)));
+  document.querySelectorAll('.row-select').forEach((el) => {
+    setRowSelectedClass(el.value, selectedCandidateIds.has(el.value));
+  });
+  updateBulkToolbar();
+  if ((data.total || 0) > BULK_EXPORT_FETCH_LIMIT) {
+    alert(`Selection capped at ${BULK_EXPORT_FETCH_LIMIT.toLocaleString()} rows due to export limit.`);
+  }
+}
+
+function visibleColumnKeysForExport() {
+  const config = loadColumnConfig();
+  return config.order.filter((key) => config.visible[key]);
+}
+
+function exportCandidatesCsv() {
+  const params = new URLSearchParams(window.location.search);
+  params.set('format', 'csv');
+  params.set('columns', visibleColumnKeysForExport().join(','));
+  window.location.href = `${BASE}/api/candidates/export?${params.toString()}`;
+}
+
+async function bulkVote(action) {
+  const ids = selectedIds();
+  if (!ids.length) return;
+
+  const before = new Map();
+  ids.forEach((id) => {
+    if (document.querySelector(`tr[data-candidate-id="${id}"]`)) {
+      before.set(id, getVoteState(id));
+      if (action === 'up' || action === 'down') {
+        applyVoteState(id, nextVoteState(before.get(id), action));
+      } else if (action === 'clear') {
+        const current = before.get(id);
+        const cleared = {...current};
+        if (cleared.user_vote === 'up') cleared.thumbs_up = Math.max(0, cleared.thumbs_up - 1);
+        if (cleared.user_vote === 'down') cleared.thumbs_down = Math.max(0, cleared.thumbs_down - 1);
+        cleared.user_vote = null;
+        applyVoteState(id, cleared);
+      }
+    }
+  });
+
+  try {
+    const resp = await fetch(`${BASE}/api/candidates/bulk/vote`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({candidate_ids: ids, action}),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Bulk vote failed');
+    (data.failed || []).forEach((f) => {
+      const prev = before.get(String(f.candidate_id));
+      if (prev) applyVoteState(String(f.candidate_id), prev);
+    });
+    if ((data.failed || []).length) {
+      alert(`Bulk vote partial failure: ${data.failed.length} failed.`);
+    }
+  } catch (e) {
+    before.forEach((state, id) => applyVoteState(id, state));
+    alert(e.message || 'Bulk vote failed');
+  }
+}
+
+async function bulkTag(action) {
+  const ids = selectedIds();
+  if (!ids.length) return;
+  const raw = prompt(action === 'add' ? 'Tags to add (comma separated)' : 'Tags to remove (comma separated)');
+  if (!raw) return;
+  const tags = raw.split(',').map((s) => s.trim()).filter(Boolean);
+  if (!tags.length) return;
+
+  const resp = await fetch(`${BASE}/api/candidates/bulk/tag`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({candidate_ids: ids, action, tags}),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    alert(data.error || 'Bulk tag failed');
+    return;
+  }
+  if ((data.failed || []).length) {
+    alert(`Bulk tag completed with ${data.failed.length} failures.`);
+  } else {
+    location.reload();
+  }
+}
+
+async function bulkPromote() {
+  const ids = selectedIds();
+  if (!ids.length) return;
+  const reason = prompt('Shared reason for promotion');
+  if (reason === null) return;
+  const notes = prompt('Optional shared notes (leave blank for none)') || '';
+
+  const resp = await fetch(`${BASE}/api/candidates/bulk/promote`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({candidate_ids: ids, reason, notes}),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    alert(data.error || 'Bulk promote failed');
+    return;
+  }
+  const created = (data.created || []).length;
+  const failed = (data.failed || []).length;
+  alert(`Bulk promote done. Created: ${created}. Failed: ${failed}.`);
+  location.reload();
 }
 
 function fmt(v, prefix='$') {
@@ -803,6 +1010,24 @@ applyColumnConfig(columnConfig);
 renderColumnPanels(columnConfig);
 loadUseTypes();
 renderActiveFilterChips();
+updateBulkToolbar();
+
+document.querySelectorAll('tr[data-candidate-id]').forEach((row) => {
+  let holdTimer = null;
+  row.addEventListener('touchstart', () => {
+    holdTimer = setTimeout(() => {
+      const id = row.getAttribute('data-candidate-id');
+      const selected = !selectedCandidateIds.has(id);
+      toggleRowSelection(id, selected, false);
+    }, 500);
+  }, {passive: true});
+  row.addEventListener('touchend', () => {
+    if (holdTimer) clearTimeout(holdTimer);
+  });
+  row.addEventListener('touchmove', () => {
+    if (holdTimer) clearTimeout(holdTimer);
+  });
+});
 
 document.getElementById('columnGearBtn').addEventListener('click', () => {
   if (window.innerWidth < 768) {

@@ -14,6 +14,7 @@
     .conf-badge-low { background:#dc3545; color:#fff; }
     .conf-badge-medium { background:#ffc107; color:#212529; }
     .conf-badge-high { background:#198754; color:#fff; }
+    .reminder-badge-overdue { background:#dc3545; color:#fff; }
   </style>
 </head>
 <body>
@@ -32,6 +33,15 @@
           <li class="nav-item"><a class="nav-link" href="{{ base_url }}/settings">⚙️ Settings</a></li>
           <li class="nav-item"><a class="nav-link" href="{{ base_url }}/learning">🧠 Learning</a></li>
         </ul>
+        <div class="dropdown me-3">
+          <button class="btn btn-sm btn-outline-light dropdown-toggle" type="button" data-bs-toggle="dropdown">
+            Reminders <span class="badge bg-secondary" id="navReminderCount">0</span>
+          </button>
+          <div class="dropdown-menu dropdown-menu-end p-2" style="min-width:320px">
+            <div class="small text-muted mb-1">Pending reminders</div>
+            <div id="navReminderList" class="small text-muted">Loading…</div>
+          </div>
+        </div>
         <span class="navbar-text text-secondary small">Snohomish County · Powered by Cairn Consulting</span>
       </div>
     </div>
@@ -42,6 +52,33 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    async function loadNavReminders() {
+      const countEl = document.getElementById('navReminderCount');
+      const listEl = document.getElementById('navReminderList');
+      if (!countEl || !listEl) return;
+      try {
+        const rows = await fetch('{{ base_url }}/api/reminders/pending').then((r) => r.json());
+        const overdue = (rows || []).filter((r) => r.is_overdue).length;
+        countEl.textContent = String((rows || []).length);
+        countEl.className = `badge ${overdue > 0 ? 'reminder-badge-overdue' : 'bg-secondary'}`;
+        if (!rows || !rows.length) {
+          listEl.innerHTML = '<span class=\"text-muted\">No pending reminders.</span>';
+          return;
+        }
+        listEl.innerHTML = rows.slice(0, 8).map((r) => {
+          const overdueBadge = r.is_overdue ? '<span class=\"badge bg-danger ms-1\">Overdue</span>' : '';
+          const when = r.remind_at ? r.remind_at.replace('T', ' ').slice(0, 16) : '—';
+          const msg = (r.message || 'No note').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          const addr = (r.lead_address || 'Lead').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          return `<div class=\"border-bottom pb-1 mb-1\"><div><strong>${addr}</strong> ${overdueBadge}</div><div>${when}</div><div class=\"text-muted\">${msg}</div></div>`;
+        }).join('');
+      } catch (e) {
+        listEl.textContent = 'Reminder check failed.';
+      }
+    }
+    loadNavReminders();
+  </script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

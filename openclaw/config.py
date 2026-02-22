@@ -39,6 +39,9 @@ class Settings:
     OSINT_BASE_URL: str = os.getenv("OSINT_BASE_URL", "http://localhost:8450")
     OSINT_UI_URL: str = os.getenv("OSINT_UI_URL", "")
     OSINT_ENABLED: bool = _env_bool("OSINT_ENABLED", True)
+    EXPORT_MAX_ROWS: int = int(os.getenv("EXPORT_MAX_ROWS", "10000"))
+    REMINDER_CHECK_INTERVAL_MIN: int = int(os.getenv("REMINDER_CHECK_INTERVAL_MIN", "5"))
+    REMINDER_EMAIL_ENABLED: bool = _env_bool("REMINDER_EMAIL_ENABLED", False)
 
 
 settings = Settings()

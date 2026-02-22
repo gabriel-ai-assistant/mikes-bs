@@ -7,6 +7,7 @@
 .step.active{background:#0d6efd;color:#fff}
 .conf-track{background:#e9ecef;border-radius:8px;height:10px;overflow:hidden}
 .conf-fill{height:10px}
+.reminder-overdue{border-color:#dc3545!important;background:#fff5f5}
 </style>
 
 <div class="d-flex justify-content-between align-items-start gap-2 mb-3 flex-wrap">
@@ -108,6 +109,47 @@
 
   <div class="col-12">
     <div class="card border-0 shadow-sm">
+      <div class="card-header bg-transparent fw-bold">Reminders</div>
+      <div class="card-body">
+        <div class="row g-2 align-items-end mb-3">
+          <div class="col-12 col-md-4">
+            <label class="form-label small mb-1">Remind At</label>
+            <input id="remindAt" type="datetime-local" class="form-control form-control-sm">
+          </div>
+          <div class="col-12 col-md-6">
+            <label class="form-label small mb-1">Message (optional)</label>
+            <input id="reminderMessage" type="text" class="form-control form-control-sm" placeholder="Follow up note">
+          </div>
+          <div class="col-12 col-md-2">
+            <button class="btn btn-sm btn-primary w-100" onclick="setReminder()">Set Reminder</button>
+          </div>
+        </div>
+
+        <div id="leadReminders">
+          {% if not pending_reminders %}
+          <div class="text-muted small">No pending reminders.</div>
+          {% endif %}
+          {% for reminder in pending_reminders %}
+          {% set is_overdue = reminder.remind_at and reminder.remind_at < now_utc %}
+          <div class="border rounded p-2 mb-2 {% if is_overdue %}reminder-overdue{% endif %}">
+            <div class="d-flex justify-content-between gap-2">
+              <div>
+                <div><strong>{{ reminder.remind_at.strftime('%Y-%m-%d %H:%M') if reminder.remind_at else '—' }}</strong>
+                  {% if is_overdue %}<span class="badge bg-danger ms-1">Overdue</span>{% endif %}
+                </div>
+                <div class="small text-muted">{{ reminder.message or 'No note' }}</div>
+              </div>
+              <button class="btn btn-sm btn-outline-secondary" onclick="dismissReminder({{ reminder.id }})">Dismiss</button>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
       <div class="card-header bg-transparent fw-bold">Contact Log</div>
       <div class="card-body">
         <div class="row g-2 align-items-end mb-3">
@@ -197,6 +239,35 @@ async function addContactLog() {
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     alert(data.error || 'Failed to add contact log');
+    return;
+  }
+  location.reload();
+}
+
+async function setReminder() {
+  const remindAt = document.getElementById('remindAt').value;
+  const message = document.getElementById('reminderMessage').value;
+  if (!remindAt) {
+    alert('Choose a reminder date/time');
+    return;
+  }
+  const res = await fetch(`${BASE}/api/leads/${LEAD_ID}/reminders`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({remind_at: remindAt, message}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    alert(data.error || 'Failed to set reminder');
+    return;
+  }
+  location.reload();
+}
+
+async function dismissReminder(reminderId) {
+  const res = await fetch(`${BASE}/api/reminders/${reminderId}/dismiss`, {method: 'POST'});
+  if (!res.ok) {
+    alert('Failed to dismiss reminder');
     return;
   }
   location.reload();

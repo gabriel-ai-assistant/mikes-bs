@@ -2,41 +2,74 @@
 {% block title %}Map — Mike's BS{% endblock %}
 
 {% block content %}
-<!-- Map filter bar -->
+<style>
+.legend-panel { position: absolute; z-index: 500; top: 72px; left: 12px; width: 280px; }
+.legend-mobile-toggle { display: none; }
+.status-swatch { display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+@media (max-width: 768px) {
+  .legend-panel { top: 12px; left: 12px; right: 12px; width: auto; }
+  .legend-mobile-toggle { display: inline-block; }
+}
+</style>
+
 <div class="card border-0 shadow-sm mb-2">
-  <div class="card-body py-2">
-    <div class="d-flex flex-wrap gap-2 align-items-center">
-      <span class="fw-semibold text-muted small">Filter:</span>
-      <button class="btn btn-sm btn-success active" onclick="filterTier('')" id="btn-all">All</button>
-      <button class="btn btn-sm btn-outline-success" onclick="filterTier('A')" id="btn-A">🏆 Tier A</button>
-      <button class="btn btn-sm btn-outline-primary" onclick="filterTier('B')" id="btn-B">✅ Tier B</button>
-      <button class="btn btn-sm btn-outline-warning" onclick="filterTier('C')" id="btn-C">⬜ Tier C</button>
-      <button class="btn btn-sm btn-outline-secondary" onclick="filterTier('D')" id="btn-D" style="color:#fd7e14;border-color:#fd7e14">🟠 Tier D</button>
-      <button class="btn btn-sm btn-outline-danger" onclick="filterTier('E')" id="btn-E">🔴 Tier E</button>
-      <button class="btn btn-sm btn-outline-dark" onclick="filterTier('F')" id="btn-F">⚫ Tier F</button>
-      <div class="vr"></div>
-      <span class="small text-muted" id="countLabel">Loading…</span>
-      <div class="vr"></div>
-      <button id="satBtn" class="btn btn-sm btn-outline-secondary" onclick="toggleSatellite()">🛰️ Satellite</button>
-    </div>
+  <div class="card-body py-2 d-flex flex-wrap gap-2 align-items-center">
+    <span class="fw-semibold text-muted small">Tier Filter:</span>
+    <button class="btn btn-sm btn-success active" onclick="filterTier('')" id="btn-all">All</button>
+    <button class="btn btn-sm btn-outline-success" onclick="filterTier('A')" id="btn-A">Tier A</button>
+    <button class="btn btn-sm btn-outline-primary" onclick="filterTier('B')" id="btn-B">Tier B</button>
+    <button class="btn btn-sm btn-outline-warning" onclick="filterTier('C')" id="btn-C">Tier C</button>
+    <button class="btn btn-sm btn-outline-secondary" onclick="filterTier('D')" id="btn-D">Tier D</button>
+    <button class="btn btn-sm btn-outline-danger" onclick="filterTier('E')" id="btn-E">Tier E</button>
+    <button class="btn btn-sm btn-outline-dark" onclick="filterTier('F')" id="btn-F">Tier F</button>
+    <div class="vr"></div>
+    <span class="small text-muted" id="countLabel">Loading…</span>
   </div>
 </div>
 
-<div id="map" style="height: calc(100vh - 220px); border-radius: 0.5rem; overflow: hidden;"></div>
+<div class="position-relative">
+  <div id="map" style="height: calc(100vh - 220px); border-radius: 0.5rem; overflow: hidden;"></div>
 
-<!-- Legend -->
-<div class="card border-0 shadow-sm mt-2">
-  <div class="card-body py-2">
-    <div class="d-flex gap-3 flex-wrap align-items-center">
-      <span class="fw-semibold text-muted small">Legend:</span>
-      <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#198754;"></span> Tier A — Prime</span>
-      <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#0d6efd;"></span> Tier B — Good</span>
-      <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#ffc107;"></span> Tier C — Decent</span>
-      <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#fd7e14;"></span> Tier D — Marginal</span>
-      <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#dc3545;"></span> Tier E — Weak</span>
-      <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#212529;"></span> Tier F — Skip</span>
-      <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#dc3545;border:2px solid #9b1c1c;"></span> Wetland flagged</span>
-      <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#6c757d;"></span> Raw parcel</span>
+  <div class="legend-panel">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+        <strong class="small text-muted">Lead Status Overlay</strong>
+        <button class="btn btn-sm btn-outline-secondary legend-mobile-toggle" type="button" onclick="toggleLegend()">Toggle</button>
+      </div>
+      <div class="card-body py-2" id="legendBody">
+        <div class="form-check">
+          <input class="form-check-input status-filter" type="checkbox" id="status-none" value="none" checked>
+          <label class="form-check-label" for="status-none"><span class="status-swatch" style="background:#6c757d"></span>No Lead</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input status-filter" type="checkbox" id="status-new" value="new" checked>
+          <label class="form-check-label" for="status-new"><span class="status-swatch" style="background:#0d6efd"></span>New</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input status-filter" type="checkbox" id="status-researching" value="researching" checked>
+          <label class="form-check-label" for="status-researching"><span class="status-swatch" style="background:#ffc107"></span>Researching</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input status-filter" type="checkbox" id="status-contacted" value="contacted" checked>
+          <label class="form-check-label" for="status-contacted"><span class="status-swatch" style="background:#fd7e14"></span>Contacted</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input status-filter" type="checkbox" id="status-negotiating" value="negotiating" checked>
+          <label class="form-check-label" for="status-negotiating"><span class="status-swatch" style="background:#6f42c1"></span>Negotiating</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input status-filter" type="checkbox" id="status-closed_won" value="closed_won" checked>
+          <label class="form-check-label" for="status-closed_won"><span class="status-swatch" style="background:#198754"></span>Closed Won</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input status-filter" type="checkbox" id="status-closed_lost" value="closed_lost" checked>
+          <label class="form-check-label" for="status-closed_lost"><span class="status-swatch" style="background:#dc3545"></span>Closed Lost</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input status-filter" type="checkbox" id="status-dead" value="dead" checked>
+          <label class="form-check-label" for="status-dead"><span class="status-swatch" style="background:#dc3545"></span>Dead</label>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -45,324 +78,132 @@
 {% block scripts %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9/dist/leaflet.js"></script>
-
-<style>
-/* Style the Leaflet popup to match the candidates detail modal */
-.leaflet-popup-content-wrapper {
-  border-radius: 12px;
-  box-shadow: 0 4px 24px rgba(0,0,0,.18);
-  padding: 0;
-  overflow: hidden;
-}
-.leaflet-popup-content {
-  margin: 0;
-  width: 320px !important;
-}
-.lp-card { font-family: inherit; font-size: 0.88rem; }
-.lp-header {
-  background: #212529;
-  color: #fff;
-  padding: 10px 14px 8px;
-}
-.lp-header .lp-tier-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-weight: 700;
-  font-size: 0.8rem;
-  margin-right: 6px;
-}
-.lp-header .lp-address { font-weight: 700; font-size: 0.97rem; }
-.lp-header .lp-owner { color: #adb5bd; font-size: 0.82rem; margin-top: 2px; }
-.lp-body { padding: 10px 14px; }
-.lp-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; margin-bottom: 8px; }
-.lp-metric-label { color: #6c757d; font-size: 0.78rem; }
-.lp-metric-value { font-weight: 600; font-size: 0.88rem; }
-.lp-splits-box {
-  display: inline-block;
-  background: #f0fdf4;
-  border-radius: 8px;
-  padding: 4px 12px;
-  text-align: center;
-  margin-bottom: 8px;
-}
-.lp-splits-num { font-size: 1.5rem; font-weight: 800; color: #198754; line-height:1; }
-.lp-splits-lbl { font-size: 0.7rem; color: #6c757d; }
-.lp-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
-.lp-tag { background: #fee2e2; color: #9b1c1c; padding: 2px 7px; border-radius: 5px; font-size: 0.73rem; }
-.lp-tag-ok { background: #dcfce7; color: #166534; padding: 2px 7px; border-radius: 5px; font-size: 0.73rem; }
-.lp-section-label { font-size: 0.73rem; font-weight: 700; text-transform: uppercase; color: #6c757d; letter-spacing: .5px; margin: 8px 0 4px; }
-.lp-rating-row { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
-.lp-rating-btn {
-  border: 1px solid #dee2e6; background: #fff; border-radius: 6px;
-  padding: 3px 10px; cursor: pointer; font-size: 0.82rem;
-  transition: background .15s, border-color .15s;
-}
-.lp-rating-btn.up-active   { background: #198754; color: #fff; border-color: #198754; }
-.lp-rating-btn.down-active { background: #dc3545; color: #fff; border-color: #dc3545; }
-.lp-note-list { margin-bottom: 6px; }
-.lp-note-item { display: flex; gap: 6px; margin-bottom: 4px; font-size: 0.8rem; }
-.lp-note-text { color: #212529; }
-.lp-note-date { color: #adb5bd; font-size: 0.7rem; }
-.lp-note-input-row { display: flex; gap: 4px; }
-.lp-note-input {
-  flex: 1; border: 1px solid #dee2e6; border-radius: 6px;
-  padding: 3px 8px; font-size: 0.8rem; outline: none;
-}
-.lp-note-input:focus { border-color: #0d6efd; }
-.lp-add-btn {
-  background: #0d6efd; color: #fff; border: none; border-radius: 6px;
-  padding: 3px 10px; font-size: 0.8rem; cursor: pointer; white-space: nowrap;
-}
-.lp-detail-link {
-  display: block; text-align: center; margin-top: 10px;
-  background: #0d6efd; color: #fff; border-radius: 7px;
-  padding: 6px 12px; text-decoration: none; font-weight: 600; font-size: 0.85rem;
-}
-.lp-detail-link:hover { background: #0b5ed7; color: #fff; }
-.lp-footer { padding: 0 14px 12px; }
-</style>
-
 <script>
 const BASE = "{{ base_url }}";
-
 const map = L.map('map').setView([47.9, -122.1], 10);
-
-const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© OpenStreetMap contributors'
-});
-const satelliteLayer = L.tileLayer(
-  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-  { attribution: 'Imagery © Esri' }
-);
-streetLayer.addTo(map);
-
-let satActive = false;
-function toggleSatellite() {
-  if (satActive) {
-    map.removeLayer(satelliteLayer);
-    map.addLayer(streetLayer);
-    document.getElementById('satBtn').textContent = '🛰️ Satellite';
-    satActive = false;
-  } else {
-    map.removeLayer(streetLayer);
-    map.addLayer(satelliteLayer);
-    document.getElementById('satBtn').textContent = '🗺️ Street Map';
-    satActive = true;
-  }
-}
+}).addTo(map);
 
 let markers = [];
 let currentTier = '';
-// Cache candidate detail data to avoid repeated fetches
-const detailCache = {};
+let points = [];
 
-function tierColor(tier, wetland) {
-  if (wetland) return '#dc3545';
-  if (tier === 'A') return '#198754';
-  if (tier === 'B') return '#0d6efd';
-  if (tier === 'C') return '#ffc107';
-  if (tier === 'D') return '#fd7e14';
-  if (tier === 'E') return '#dc3545';
-  if (tier === 'F') return '#212529';
-  if (tier === 'parcel') return '#6c757d';
-  return '#6c757d';
+const STATUS_COLORS = {
+  none: '#6c757d',
+  new: '#0d6efd',
+  researching: '#ffc107',
+  contacted: '#fd7e14',
+  negotiating: '#6f42c1',
+  closed_won: '#198754',
+  closed_lost: '#dc3545',
+  dead: '#dc3545',
+};
+
+function normalizeStatus(status) {
+  return status || 'none';
 }
 
-function tierBadgeBg(tier) {
-  const m = {A:'#198754',B:'#0d6efd',C:'#ffc107',D:'#fd7e14',E:'#dc3545',F:'#212529'};
-  return m[tier] || '#6c757d';
+function statusColor(status) {
+  return STATUS_COLORS[normalizeStatus(status)] || STATUS_COLORS.none;
 }
 
-function fmt(v) { return v != null ? '$' + Number(v).toLocaleString() : '—'; }
-function fmtSf(v) { if (!v) return '—'; return v.toLocaleString() + ' sf (' + (v/43560).toFixed(2) + ' ac)'; }
 function escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// Build popup HTML from point data (fast — no API call)
+function fmt(v) {
+  return v != null ? '$' + Number(v).toLocaleString() : '—';
+}
+
+function fmtSf(v) {
+  return v ? `${Number(v).toLocaleString()} sf` : '—';
+}
+
+function activeStatuses() {
+  const set = new Set();
+  document.querySelectorAll('.status-filter').forEach((el) => {
+    if (el.checked) set.add(el.value);
+  });
+  return set;
+}
+
 function buildPopupHtml(pt) {
-  const flags = [];
-  if (pt.wetland) flags.push('<span class="lp-tag">🌿 Wetland</span>');
-  if (pt.ag)      flags.push('<span class="lp-tag">🚜 Ag Zone</span>');
-  const tagsHtml = flags.length
-    ? flags.join('') 
-    : '<span class="lp-tag-ok">✅ No critical flags</span>';
-
-  const detailUrl = pt.parcel_id ? `${BASE}/property/${pt.parcel_id}` : '#';
-  const scoreHtml = pt.score != null ? `<div><div class="lp-metric-label">Score</div><div class="lp-metric-value">${pt.score} pts</div></div>` : '';
-
   return `
-<div class="lp-card">
-  <div class="lp-header">
-    <div>
-      <span class="lp-tier-badge" style="background:${tierBadgeBg(pt.tier)};${pt.tier==='C'?'color:#212529':'color:#fff'}">${pt.tier || '?'}</span>
-      <span class="lp-address">${escHtml(pt.address)}</span>
+    <div style="min-width:240px">
+      <div class="fw-semibold">${escHtml(pt.address)}</div>
+      <div class="small text-muted">${escHtml(pt.owner)}</div>
+      <div class="small mt-1"><strong>Lead Status:</strong> ${escHtml(normalizeStatus(pt.lead_status))}</div>
+      <div class="small"><strong>OSINT:</strong> ${escHtml(pt.osint_status || '—')}</div>
+      <div class="small"><strong>Tier:</strong> ${escHtml(pt.tier || '—')} · <strong>Score:</strong> ${pt.score ?? '—'}</div>
+      <div class="small"><strong>Splits:</strong> ${pt.splits ?? '—'} · <strong>Lot:</strong> ${fmtSf(pt.lot_sf)}</div>
+      <div class="small"><strong>Zone:</strong> ${escHtml(pt.zone || '—')} · <strong>Value:</strong> ${fmt(pt.value)}</div>
+      <a class="btn btn-sm btn-primary mt-2" href="${BASE}/property/${encodeURIComponent(pt.parcel_id || '')}">View Details</a>
     </div>
-    <div class="lp-owner">${escHtml(pt.owner)}</div>
-  </div>
-  <div class="lp-body">
-    <div class="d-flex align-items-center gap-3 mb-2">
-      <div class="lp-splits-box">
-        <div class="lp-splits-num">${pt.splits ?? '—'}</div>
-        <div class="lp-splits-lbl">Potential Splits</div>
-      </div>
-      <div class="lp-tags">${tagsHtml}</div>
-    </div>
-    <div class="lp-metrics">
-      <div><div class="lp-metric-label">Lot Size</div><div class="lp-metric-value">${fmtSf(pt.lot_sf)}</div></div>
-      <div><div class="lp-metric-label">Zone</div><div class="lp-metric-value">${pt.zone || '—'}</div></div>
-      <div><div class="lp-metric-label">Land Value</div><div class="lp-metric-value">${fmt(pt.value)}</div></div>
-      ${scoreHtml}
-    </div>
-
-    <div class="lp-section-label">⭐ Rating</div>
-    <div class="lp-rating-row" id="rating-row-${pt.id}">
-      <button class="lp-rating-btn" id="up-${pt.id}" onclick="mapRate('${pt.id}','up')">👍 <span id="up-count-${pt.id}">…</span></button>
-      <button class="lp-rating-btn" id="down-${pt.id}" onclick="mapRate('${pt.id}','down')">👎 <span id="down-count-${pt.id}">…</span></button>
-    </div>
-
-    <div class="lp-section-label">💬 Notes</div>
-    <div class="lp-note-list" id="notes-${pt.id}"><span style="color:#adb5bd;font-size:.78rem">Loading…</span></div>
-    <div class="lp-note-input-row">
-      <input class="lp-note-input" id="note-input-${pt.id}" type="text" placeholder="Add a note…"
-             onkeydown="if(event.key==='Enter'){mapAddNote('${pt.id}')}">
-      <button class="lp-add-btn" onclick="mapAddNote('${pt.id}')">Add</button>
-    </div>
-  </div>
-  <div class="lp-footer">
-    <a class="lp-detail-link" href="${detailUrl}">View Full Details →</a>
-  </div>
-</div>`;
+  `;
 }
 
-// Load rating + notes for a popup after it opens
-async function loadPopupData(candidateId) {
-  const [fb, notes] = await Promise.all([
-    fetch(`${BASE}/api/candidate/${candidateId}/feedback`).then(r=>r.json()),
-    fetch(`${BASE}/api/candidate/${candidateId}/notes?limit=3`).then(r=>r.json()),
-  ]);
-  // Update rating buttons
-  const upBtn = document.getElementById(`up-${candidateId}`);
-  const downBtn = document.getElementById(`down-${candidateId}`);
-  if (upBtn) {
-    document.getElementById(`up-count-${candidateId}`).textContent = fb.thumbs_up;
-    document.getElementById(`down-count-${candidateId}`).textContent = fb.thumbs_down;
-    if (fb.thumbs_up > 0) upBtn.classList.add('up-active');
-    if (fb.thumbs_down > 0) downBtn.classList.add('down-active');
-  }
-  // Update notes
-  const notesEl = document.getElementById(`notes-${candidateId}`);
-  if (notesEl) {
-    notesEl.innerHTML = notes.length
-      ? notes.map(n=>`<div class="lp-note-item"><span>💬</span><div><span class="lp-note-text">${escHtml(n.note)}</span> <span class="lp-note-date">${n.created_at ? n.created_at.slice(0,10) : ''}</span></div></div>`).join('')
-      : '<span style="color:#adb5bd;font-size:.78rem">No notes yet.</span>';
-  }
-}
-
-async function doRating(candidateId, rating, listItemSelector=null) {
-  const resp = await fetch(`${BASE}/api/candidate/${candidateId}/feedback`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({feedback_type: rating === 'up' ? 'thumbs_up' : 'thumbs_down'})
-  });
-  await resp.json();
-  const upBtn = document.getElementById(`up-${candidateId}`);
-  const downBtn = document.getElementById(`down-${candidateId}`);
-  if (rating === 'down') {
-    if (downBtn) downBtn.classList.add('down-active');
-    map.closePopup();
-  } else if (upBtn) {
-    upBtn.classList.add('up-active');
-  }
-}
-
-async function mapRate(candidateId, rating) {
-  return doRating(candidateId, rating);
-}
-
-async function mapAddNote(candidateId) {
-  const inp = document.getElementById(`note-input-${candidateId}`);
-  if (!inp) return;
-  const note = inp.value.trim();
-  if (!note) return;
-  await fetch(`${BASE}/api/candidate/${candidateId}/notes`, {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({note}),
-  });
-  inp.value = '';
-  // Reload notes
-  const notes = await fetch(`${BASE}/api/candidate/${candidateId}/notes?limit=3`).then(r=>r.json());
-  const notesEl = document.getElementById(`notes-${candidateId}`);
-  if (notesEl) {
-    notesEl.innerHTML = notes.length
-      ? notes.map(n=>`<div class="lp-note-item"><span>💬</span><div><span class="lp-note-text">${escHtml(n.note)}</span> <span class="lp-note-date">${n.created_at ? n.created_at.slice(0,10) : ''}</span></div></div>`).join('')
-      : '<span style="color:#adb5bd;font-size:.78rem">No notes yet.</span>';
-  }
-}
-
-async function loadPoints(tier = '') {
-  document.getElementById('countLabel').textContent = 'Loading…';
-  markers.forEach(m => map.removeLayer(m));
+function renderMarkers() {
+  const active = activeStatuses();
+  markers.forEach((m) => map.removeLayer(m));
   markers = [];
 
-  const url = `${BASE}/api/map/points${tier ? '?tier='+tier : ''}`;
-  const pts = await fetch(url).then(r => r.json());
+  const visible = points.filter((pt) => active.has(normalizeStatus(pt.lead_status)));
+  document.getElementById('countLabel').textContent = `${visible.length.toLocaleString()} shown`;
 
-  document.getElementById('countLabel').textContent = `${pts.length.toLocaleString()} candidates shown`;
-
-  pts.forEach(pt => {
-    const color = tierColor(pt.tier, pt.wetland);
-    const radius = pt.tier === 'A' ? 7 : pt.tier === 'B' ? 5 : 4;
-
+  visible.forEach((pt) => {
     const marker = L.circleMarker([pt.lat, pt.lng], {
-      radius,
-      fillColor: color,
-      color: pt.ag ? '#9b1c1c' : '#fff',
-      weight: pt.ag ? 2 : 1,
+      radius: pt.tier === 'A' ? 7 : 5,
+      fillColor: statusColor(pt.lead_status),
+      color: '#fff',
+      weight: 1,
       opacity: 0.9,
-      fillOpacity: 0.85,
+      fillOpacity: 0.9,
     });
-
-    const popup = L.popup({ maxWidth: 340, minWidth: 320, className: '' })
-      .setContent(buildPopupHtml(pt));
-
-    marker.bindPopup(popup);
-
-    // Load async data when popup opens
-    marker.on('popupopen', () => {
-      // Small delay to ensure DOM is rendered
-      setTimeout(() => loadPopupData(pt.id), 50);
-    });
-
+    marker.bindPopup(L.popup({ maxWidth: 300 }).setContent(buildPopupHtml(pt)));
     marker.addTo(map);
     markers.push(marker);
   });
 }
 
+async function loadPoints(tier = '') {
+  document.getElementById('countLabel').textContent = 'Loading…';
+  const url = `${BASE}/api/map/points${tier ? `?tier=${encodeURIComponent(tier)}` : ''}`;
+  const fc = await fetch(url).then((r) => r.json());
+  points = (fc.features || []).map((f) => {
+    const p = f.properties || {};
+    const c = f.geometry && f.geometry.coordinates ? f.geometry.coordinates : [null, null];
+    return {
+      ...p,
+      lng: c[0],
+      lat: c[1],
+    };
+  }).filter((pt) => pt.lat != null && pt.lng != null);
+
+  renderMarkers();
+}
+
 function filterTier(tier) {
   currentTier = tier;
-  ['all','A','B','C','D','E','F'].forEach(t => {
+  ['all','A','B','C','D','E','F'].forEach((t) => {
     const btn = document.getElementById('btn-' + t);
-    if (btn) btn.className = btn.className.replace(' active','')
-      .replace('btn-success','btn-outline-success')
-      .replace('btn-primary','btn-outline-primary')
-      .replace('btn-warning','btn-outline-warning')
-      .replace('btn-danger','btn-outline-danger')
-      .replace('btn-dark','btn-outline-dark');
+    if (!btn) return;
+    btn.classList.remove('active');
   });
   const active = document.getElementById('btn-' + (tier || 'all'));
-  if (active) {
-    active.className = active.className
-      .replace('btn-outline-success','btn-success')
-      .replace('btn-outline-primary','btn-primary')
-      .replace('btn-outline-warning','btn-warning')
-      .replace('btn-outline-danger','btn-danger')
-      .replace('btn-outline-dark','btn-dark') + ' active';
-  }
+  if (active) active.classList.add('active');
   loadPoints(tier);
 }
+
+function toggleLegend() {
+  const body = document.getElementById('legendBody');
+  if (!body) return;
+  body.style.display = body.style.display === 'none' ? '' : 'none';
+}
+
+document.querySelectorAll('.status-filter').forEach((el) => {
+  el.addEventListener('change', renderMarkers);
+});
 
 loadPoints();
 </script>

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.responses import RedirectResponse
@@ -12,6 +13,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from openclaw.db.models import Candidate, Lead, Parcel, ScoreTierEnum
+from openclaw.config import settings as app_settings
+from openclaw.web.reminders import process_due_reminders
 from openclaw.web.common import BASE_DIR, ROOT_PATH, db, templates
 from openclaw.web.auth_utils import seed_admin_user
 from openclaw.web.routers import auth, candidates, feasibility, leads, learning, map, scoring, settings
@@ -20,6 +23,7 @@ app = FastAPI(title="Mike's Building System", docs_url=None, redoc_url=None, roo
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 _AUTH_ALLOWLIST = {"/login", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/logout"}
+_scheduler: BackgroundScheduler | None = None
 
 
 @app.middleware("http")
@@ -43,6 +47,26 @@ def _seed_auth_defaults() -> None:
         seed_admin_user(session)
     finally:
         session.close()
+
+    global _scheduler
+    if _scheduler is None:
+        _scheduler = BackgroundScheduler()
+        _scheduler.add_job(
+            process_due_reminders,
+            "interval",
+            minutes=max(1, int(app_settings.REMINDER_CHECK_INTERVAL_MIN)),
+            id="process_due_reminders",
+            replace_existing=True,
+        )
+        _scheduler.start()
+
+
+@app.on_event("shutdown")
+def _shutdown_scheduler() -> None:
+    global _scheduler
+    if _scheduler:
+        _scheduler.shutdown(wait=False)
+        _scheduler = None
 
 
 @app.get("/", response_class=HTMLResponse)
