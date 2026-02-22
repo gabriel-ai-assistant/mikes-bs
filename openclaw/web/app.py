@@ -195,7 +195,11 @@ def get_candidates_api(
 ):
     """JSON API for candidates with optional tag filtering."""
     q = (
-        session.query(Candidate)
+        session.query(
+            Candidate,
+            func.ST_Y(func.ST_Centroid(Parcel.geometry)).label("lat"),
+            func.ST_X(func.ST_Centroid(Parcel.geometry)).label("lng"),
+        )
         .join(Parcel)
         .options(joinedload(Candidate.parcel))
     )
@@ -226,8 +230,9 @@ def get_candidates_api(
     total = q.count()
     sort_map = {
         "splits": Candidate.potential_splits.desc(),
-        "lot":    Parcel.lot_sf.desc(),
-        "value":  Parcel.assessed_value.desc(),
+        "splits_desc": Candidate.potential_splits.desc(),
+        "lot": Parcel.lot_sf.desc(),
+        "value": Parcel.assessed_value.desc(),
     }
     q = q.order_by(sort_map.get(sort, Candidate.potential_splits.desc()))
     rows = q.offset(offset).limit(limit).all()
@@ -237,6 +242,7 @@ def get_candidates_api(
         "candidates": [
             {
                 "id": str(c.id),
+                "parcel_id": c.parcel.parcel_id,
                 "address": c.parcel.address,
                 "owner": c.parcel.owner_name,
                 "tier": c.score_tier.value if c.score_tier else None,
@@ -248,8 +254,10 @@ def get_candidates_api(
                 "economic_margin_pct": c.economic_margin_pct,
                 "arbitrage_depth_score": c.arbitrage_depth_score,
                 "tags": c.tags or [],
+                "lat": float(lat) if lat is not None else None,
+                "lng": float(lng) if lng is not None else None,
             }
-            for c in rows
+            for c, lat, lng in rows
         ]
     }
 

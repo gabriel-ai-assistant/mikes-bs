@@ -88,54 +88,42 @@
 </div>
 
 <div class="row g-3 mb-4">
-  <div class="col-md-4">
-    <div class="card border-0 shadow-sm h-100">
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
       <div class="card-body">
         <h6 class="card-title fw-bold">Candidates by Tier</h6>
-        <canvas id="tierChart" height="180"></canvas>
-      </div>
-    </div>
-  </div>
-  <div class="col-md-8">
-    <div class="card border-0 shadow-sm h-100">
-      <div class="card-body">
+        <div class="mx-auto" style="max-width:220px;max-height:220px;">
+          <canvas id="tierChart" height="220"></canvas>
+        </div>
+
         <h6 class="card-title fw-bold">🔥 Top Tier A Deals</h6>
         <div class="table-responsive">
-          <table class="table table-sm table-hover mb-0">
+          <table class="table table-sm table-hover mb-0 small align-middle">
             <thead class="table-light">
               <tr>
+                <th>Tier</th>
                 <th>Address</th>
-                <th>Owner</th>
-                <th>Lot Size</th>
                 <th>Splits</th>
-                <th>Land Value</th>
-                <th></th>
+                <th>Margin %</th>
+                <th>Key Tags</th>
               </tr>
             </thead>
-            <tbody>
-              {% for c in top5 %}
-              <tr data-candidate-id='{{ c.id }}'>
-                <td class="fw-semibold">{{ c.parcel.address or "—" }}</td>
-                <td class="text-muted small">{{ c.parcel.owner_name or "—" }}</td>
-                <td class="small">{{ c.parcel.lot_sf | acres }}</td>
-                <td>
-                  <span class="badge bg-success">{{ c.potential_splits }}</span>
-                  {% if c.splits_min is not none and c.splits_max is not none %}
-                  <div class="small text-muted">{{ c.splits_min }}-{{ c.splits_max }}</div>
-                  {% endif %}
-                  {% if c.splits_confidence %}
-                  <span class="badge {% if c.splits_confidence == 'HIGH' %}conf-badge-high{% elif c.splits_confidence == 'MEDIUM' %}conf-badge-medium{% else %}conf-badge-low{% endif %}">
-                    {{ c.splits_confidence }}
-                  </span>
-                  {% endif %}
-                </td>
-                <td class="small">{{ c.estimated_land_value | money }}</td>
-                <td><button class='btn btn-sm btn-outline-primary py-0' onclick='openCandidateModal("{{ c.id }}", "{{ c.parcel.id }}")'>Details</button></td>
-              </tr>
-              {% endfor %}
+            <tbody id="topTierATableBody">
+              <tr><td colspan="5" class="text-muted">Loading Tier A deals…</td></tr>
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <h6 class="card-title fw-bold mb-3">Snohomish County Tier A Map</h6>
+        <div id="tierAMap" style="height:420px;border-radius:0.5rem;overflow:hidden;"></div>
       </div>
     </div>
   </div>
@@ -188,8 +176,6 @@
 {% endblock %}
 
 {% block scripts %}
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9/dist/leaflet.css">
-<script src="https://unpkg.com/leaflet@1.9/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script>
 new Chart(document.getElementById('tierChart'), {
@@ -202,7 +188,10 @@ new Chart(document.getElementById('tierChart'), {
       borderWidth: 2,
     }]
   },
-  options: { plugins: { legend: { position: 'bottom' } } }
+  options: {
+    maintainAspectRatio: true,
+    plugins: { legend: { position: 'bottom' } },
+  }
 });
 
 const base_url = "{{ base_url }}";
@@ -255,6 +244,121 @@ function chipText(tag) {
 
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function formatMarginPct(v) {
+  if (v == null) return '—';
+  const pct = Number(v);
+  if (!Number.isFinite(pct)) return '—';
+  return `${(pct * 100).toFixed(1)}%`;
+}
+
+function renderTagChips(tags, maxCount=3) {
+  const arr = Array.isArray(tags) ? tags : [];
+  if (!arr.length) return '<span class="text-muted">—</span>';
+  return arr.slice(0, maxCount).map(tag =>
+    `<span class="badge bg-light text-dark border me-1">${chipText(escHtml(tag))}</span>`
+  ).join('');
+}
+
+async function loadTopTierADeals() {
+  const tbody = document.getElementById('topTierATableBody');
+  if (!tbody) return;
+  try {
+    const resp = await fetch(`${base_url}/api/candidates?tier=A&limit=10&sort=splits_desc`);
+    const data = await resp.json();
+    const rows = (data.candidates || []);
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-muted">No Tier A deals found.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map((c) => {
+      const tier = escHtml(c.tier || '—');
+      const address = escHtml(c.address || '—');
+      const id = escHtml(c.id || '');
+      const parcelId = escHtml(c.parcel_id || '');
+      const splits = Number.isFinite(Number(c.splits)) ? `${Number(c.splits)} splits` : '—';
+      const confChip = c.splits_confidence
+        ? `<span class="badge ${confBadgeClass(c.splits_confidence)} ms-1">${escHtml(c.splits_confidence)}</span>`
+        : '';
+      return `
+        <tr data-candidate-id="${id}">
+          <td><span class="badge ${tierBadgeClass(tier)}" style="${tierBadgeStyle(tier)}">Tier ${tier}</span></td>
+          <td><button class="btn btn-link btn-sm p-0 text-start fw-semibold text-decoration-none" onclick="openCandidateModal('${id}', '${parcelId}')">${address}</button></td>
+          <td class="small">${splits}${confChip}</td>
+          <td class="small">${formatMarginPct(c.economic_margin_pct)}</td>
+          <td class="small">${renderTagChips(c.tags, 3)}</td>
+        </tr>
+      `;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="5" class="text-danger">Failed to load Tier A deals.</td></tr>';
+  }
+}
+
+function tierColor(tier) {
+  const colors = {
+    A: '#198754',
+    B: '#0d6efd',
+    C: '#ffc107',
+    D: '#fd7e14',
+    E: '#dc3545',
+  };
+  return colors[tier] || '#6c757d';
+}
+
+async function initTierAMap() {
+  const mapEl = document.getElementById('tierAMap');
+  if (!mapEl || typeof L === 'undefined') return;
+
+  const map = L.map('tierAMap').setView([48.05, -121.85], 9);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors',
+  }).addTo(map);
+
+  try {
+    const resp = await fetch(`${base_url}/api/candidates?tier=A&limit=100`);
+    const data = await resp.json();
+    (data.candidates || []).forEach((c) => {
+      if (c.lat == null || c.lng == null) return;
+      const marker = L.circleMarker([c.lat, c.lng], {
+        radius: 8,
+        color: tierColor(c.tier),
+        fillColor: tierColor(c.tier),
+        fillOpacity: 0.8,
+        weight: 1,
+      }).addTo(map);
+      const detailBtn = (c.id && c.parcel_id)
+        ? `<button class="btn btn-sm btn-outline-primary mt-2" onclick="openCandidateModal('${escHtml(c.id)}','${escHtml(c.parcel_id)}')">Details</button>`
+        : '';
+      marker.bindPopup(`
+        <div class="small">
+          <div class="fw-semibold mb-1">${escHtml(c.address || '—')}</div>
+          <div>Splits: ${c.splits ?? '—'}</div>
+          <div>Margin: ${formatMarginPct(c.economic_margin_pct)}</div>
+          <div class="mt-1">${renderTagChips(c.tags, 3)}</div>
+          ${detailBtn}
+        </div>
+      `);
+    });
+  } catch (e) {
+    mapEl.innerHTML = '<div class="text-danger p-3">Failed to load map markers.</div>';
+  }
+
+  const legend = L.control({position: 'bottomright'});
+  legend.onAdd = function() {
+    const div = L.DomUtil.create('div', 'bg-white border rounded p-2 small');
+    const tiers = ['A', 'B', 'C', 'D', 'E'];
+    div.innerHTML = tiers.map((tier) =>
+      `<div class="d-flex align-items-center mb-1">
+        <span class="d-inline-block rounded-circle me-2" style="width:10px;height:10px;background:${tierColor(tier)};"></span>
+        Tier ${tier}
+      </div>`
+    ).join('');
+    return div;
+  };
+  legend.addTo(map);
 }
 
 async function submitFeedback(id, rating, category='', notes='') {
@@ -531,5 +635,8 @@ async function addNote(id) {
     : '<div class="text-muted small">No notes yet.</div>';
   document.getElementById(`notesList-${id}`).innerHTML = html;
 }
+
+loadTopTierADeals();
+initTierAMap();
 </script>
 {% endblock %}
