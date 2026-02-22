@@ -40,6 +40,12 @@ class LeadStatusEnum(enum.Enum):
     dead = "dead"
 
 
+class UserRoleEnum(enum.Enum):
+    admin = "admin"
+    member = "member"
+    viewer = "viewer"
+
+
 class Parcel(Base):
     __tablename__ = "parcels"
     __table_args__ = (UniqueConstraint("parcel_id", "county", name="uq_parcel_county"),)
@@ -202,6 +208,26 @@ class CandidateNote(Base):
     note = Column(Text, nullable=False)
     author = Column(Text, default="user")
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class User(Base):
+    __tablename__ = "users"
+    __table_args__ = {"extend_existing": True}
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String, nullable=False, unique=True, index=True)
+    password_hash = Column(String, nullable=False)
+    role = Column(String, nullable=False, default=UserRoleEnum.member.value)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    @validates("role")
+    def validate_role(self, _key, value):
+        if isinstance(value, UserRoleEnum):
+            return value.value
+        allowed = {r.value for r in UserRoleEnum}
+        if value not in allowed:
+            raise ValueError(f"Invalid user role '{value}'")
+        return value
 
 
 class CriticalArea(Base):

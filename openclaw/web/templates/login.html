@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Login — Mike's Building System{% endblock %}
+{% block content %}
+<div class="row justify-content-center mt-4">
+  <div class="col-12 col-sm-10 col-md-6 col-lg-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-4">
+        <h4 class="mb-3">Sign In</h4>
+        {% if error %}
+        <div class="alert alert-danger" role="alert">{{ error }}</div>
+        {% endif %}
+        <form method="post" action="{{ base_url }}/api/auth/login">
+          <div class="mb-3">
+            <label class="form-label" for="username">Username</label>
+            <input id="username" name="username" class="form-control form-control-lg" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="password">Password</label>
+            <input id="password" name="password" type="password" class="form-control form-control-lg" required>
+          </div>
+          <button type="submit" class="btn btn-primary w-100 btn-lg">Log In</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

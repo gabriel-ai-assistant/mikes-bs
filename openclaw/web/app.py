@@ -6,16 +6,43 @@ import json
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from openclaw.db.models import Candidate, Lead, Parcel, ScoreTierEnum
 from openclaw.web.common import BASE_DIR, ROOT_PATH, db, templates
+from openclaw.web.auth_utils import seed_admin_user
 from openclaw.web.routers import auth, candidates, feasibility, leads, learning, map, scoring, settings
 
 app = FastAPI(title="Mike's Building System", docs_url=None, redoc_url=None, root_path=ROOT_PATH)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+_AUTH_ALLOWLIST = {"/login", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/logout"}
+
+
+@app.middleware("http")
+async def require_auth(request: Request, call_next):
+    path = request.url.path
+    if path.startswith("/static") or path in _AUTH_ALLOWLIST:
+        return await call_next(request)
+
+    if not request.cookies.get("user_id"):
+        return RedirectResponse(url="/login", status_code=303)
+
+    return await call_next(request)
+
+
+@app.on_event("startup")
+def _seed_auth_defaults() -> None:
+    from openclaw.db.session import SessionLocal
+
+    session = SessionLocal()
+    try:
+        seed_admin_user(session)
+    finally:
+        session.close()
 
 
 @app.get("/", response_class=HTMLResponse)
