@@ -103,7 +103,7 @@
       <tbody>
         {% for c in candidates %}
         {% set p = c.parcel %}
-        <tr>
+        <tr data-candidate-id='{{ c.id }}'>
           <td>
             {% if c.score_tier and c.score_tier.value == 'A' %}
               <span class="badge bg-success fs-6">A</span>
@@ -498,7 +498,7 @@ async function openCandidateModal(id, parcelId='') {
             <option value="other">Other</option>
           </select>
           <textarea id="fbNotes-${d.id}" class="form-control form-control-sm mb-1" rows="2" placeholder="Notes (optional)…" style="max-width:320px"></textarea>
-          <button class="btn btn-danger btn-sm" onclick="submitNegFeedback('${d.id}')">Submit</button>
+          <button class="btn btn-danger btn-sm" onclick="submitNegFeedback('${d.id}')">Save note (optional)</button>
         </div>
       </div>
 
@@ -535,30 +535,56 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-async function doRating(id, rating) {
-  const params = new URLSearchParams({rating});
-  await fetch(`${BASE}/api/candidate/${id}/feedback?${params}`, {method:'POST'});
-  // Reload counts
-  const fb = await fetch(`${BASE}/api/candidate/${id}/feedback`).then(r=>r.json());
-  document.getElementById(`upCount-${id}`).textContent = fb.thumbs_up;
-  document.getElementById(`downCount-${id}`).textContent = fb.thumbs_down;
-  if (rating === 'up') {
-    document.getElementById(`upBtn-${id}`).className = 'btn btn-sm btn-success';
-    document.getElementById(`fbForm-${id}`).classList.add('d-none');
+async function doRating(id, rating, listItemSelector=null) {
+  const resp = await fetch(`${BASE}/api/candidate/${id}/feedback`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({feedback_type: rating === 'up' ? 'thumbs_up' : 'thumbs_down'})
+  });
+  await resp.json();
+
+  if (rating === 'down') {
+    const row = document.querySelector(listItemSelector || `tr[data-candidate-id='${id}']`);
+    if (row) {
+      row.style.transition = 'opacity 0.4s';
+      row.style.opacity = '0';
+      setTimeout(() => row.remove(), 400);
+    }
+    try { bootstrap.Modal.getInstance(document.getElementById('detailModal') || document.getElementById('candidateModal'))?.hide(); } catch(e) {}
+    try { bootstrap.Modal.getInstance(document.getElementById('propertyModal'))?.hide(); } catch(e) {}
+    const fbDiv = document.getElementById('fbForm-'+id);
+    if (fbDiv) { fbDiv.classList.remove('d-none'); }
   } else {
-    document.getElementById(`downBtn-${id}`).className = 'btn btn-sm btn-danger';
-    document.getElementById(`fbForm-${id}`).classList.remove('d-none');
+    const upBtn = document.getElementById('upBtn-'+id);
+    if (upBtn) upBtn.className = 'btn btn-sm btn-success';
   }
 }
 
 async function submitNegFeedback(id) {
-  const cat = document.getElementById(`fbCat-${id}`).value;
-  const notes = document.getElementById(`fbNotes-${id}`).value;
-  const params = new URLSearchParams({rating:'down'});
-  if (cat) params.append('category', cat);
-  if (notes) params.append('notes', notes);
-  await fetch(`${BASE}/api/candidate/${id}/feedback?${params}`, {method:'POST'});
-  document.getElementById(`fbForm-${id}`).innerHTML = '<span class="text-success small">✅ Feedback saved</span>';
+  const catEl = document.getElementById(`fbCat-${id}`);
+  const notesEl = document.getElementById(`fbNotes-${id}`);
+  const cat = catEl ? catEl.value : '';
+  const notes = notesEl ? notesEl.value.trim() : '';
+  const reasonMap = {
+    wrong_use: 'Wrong use type',
+    utility: 'Utility / govt owned',
+    hoa: 'HOA / association land',
+    not_buildable: 'Not buildable',
+    other: 'Other'
+  };
+  const parts = [];
+  if (cat) parts.push(`Downvote reason: ${reasonMap[cat] || cat}`);
+  if (notes) parts.push(notes);
+  if (!parts.length) {
+    document.getElementById(`fbForm-${id}`).innerHTML = '<span class="text-muted small">No note saved.</span>';
+    return;
+  }
+  await fetch(`${BASE}/api/candidate/${id}/notes`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({note: parts.join(' | ')}),
+  });
+  document.getElementById(`fbForm-${id}`).innerHTML = '<span class="text-success small">✅ Note saved</span>';
 }
 
 async function addNote(id) {

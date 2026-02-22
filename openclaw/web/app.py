@@ -330,20 +330,69 @@ def candidate_detail(candidate_id: str, session: Session = Depends(db)):
 @app.post("/api/candidate/{candidate_id}/feedback")
 async def submit_feedback(
     candidate_id: str,
-    rating: str = Query(...),  # 'up' or 'down'
+    request: Request,
+    rating: Optional[str] = Query(None),  # backward compatibility: 'up' or 'down'
     category: str = Query(""),
     notes: str = Query(""),
     session: Session = Depends(db),
 ):
     from sqlalchemy import text as sqlt
-    if rating not in ("up", "down"):
-        return JSONResponse({"error": "invalid rating"}, status_code=400)
+
+    def tier_for_score(score: int) -> ScoreTierEnum:
+        if score >= 85:
+            return ScoreTierEnum.A
+        if score >= 70:
+            return ScoreTierEnum.B
+        if score >= 50:
+            return ScoreTierEnum.C
+        if score >= 35:
+            return ScoreTierEnum.D
+        if score >= 20:
+            return ScoreTierEnum.E
+        return ScoreTierEnum.F
+
+    payload = {}
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+
+    feedback_type = payload.get("feedback_type")
+    if feedback_type in ("thumbs_up", "thumbs_down"):
+        rating_value = "up" if feedback_type == "thumbs_up" else "down"
+    elif rating in ("up", "down"):
+        rating_value = rating
+        feedback_type = "thumbs_up" if rating == "up" else "thumbs_down"
+    else:
+        return JSONResponse({"error": "invalid feedback_type"}, status_code=400)
+
+    category_value = (payload.get("category") or category or "").strip()
+    notes_value = (payload.get("notes") or notes or "").strip()
+
     session.execute(sqlt("""
         INSERT INTO candidate_feedback (candidate_id, rating, category, notes)
         VALUES (:cid, :rating, :cat, :notes)
-    """), {"cid": candidate_id, "rating": rating, "cat": category or None, "notes": notes or None})
+    """), {
+        "cid": candidate_id,
+        "rating": rating_value,
+        "cat": category_value or None,
+        "notes": notes_value or None,
+    })
+
+    candidate = session.query(Candidate).filter(Candidate.id == candidate_id).first()
+    if not candidate:
+        session.rollback()
+        return JSONResponse({"error": "candidate not found"}, status_code=404)
+
+    current_score = int(candidate.score or 0)
+    if feedback_type == "thumbs_down":
+        current_score = max(0, current_score - 40)
+        candidate.score = current_score
+        candidate.score_tier = tier_for_score(current_score)
+
+    tier = candidate.score_tier.value if candidate.score_tier else tier_for_score(current_score).value
     session.commit()
-    return {"ok": True, "rating": rating}
+    return {"ok": True, "new_score": current_score, "new_tier": tier}
 
 
 @app.get("/api/candidate/{candidate_id}/feedback")

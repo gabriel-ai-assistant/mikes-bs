@@ -260,17 +260,25 @@ async function loadPopupData(candidateId) {
   }
 }
 
-async function mapRate(candidateId, rating) {
-  await fetch(`${BASE}/api/candidate/${candidateId}/feedback?rating=${rating}`, {method:'POST'});
-  const fb = await fetch(`${BASE}/api/candidate/${candidateId}/feedback`).then(r=>r.json());
+async function doRating(candidateId, rating, listItemSelector=null) {
+  const resp = await fetch(`${BASE}/api/candidate/${candidateId}/feedback`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({feedback_type: rating === 'up' ? 'thumbs_up' : 'thumbs_down'})
+  });
+  await resp.json();
   const upBtn = document.getElementById(`up-${candidateId}`);
   const downBtn = document.getElementById(`down-${candidateId}`);
-  if (upBtn) {
-    document.getElementById(`up-count-${candidateId}`).textContent = fb.thumbs_up;
-    document.getElementById(`down-count-${candidateId}`).textContent = fb.thumbs_down;
-    upBtn.classList.toggle('up-active', fb.thumbs_up > 0);
-    downBtn.classList.toggle('down-active', fb.thumbs_down > 0);
+  if (rating === 'down') {
+    if (downBtn) downBtn.classList.add('down-active');
+    map.closePopup();
+  } else if (upBtn) {
+    upBtn.classList.add('up-active');
   }
+}
+
+async function mapRate(candidateId, rating) {
+  return doRating(candidateId, rating);
 }
 
 async function mapAddNote(candidateId) {
