@@ -27,7 +27,14 @@ INSERT_CANDIDATES_SQL = text("""
             WHEN FLOOR(p.lot_sf / z.min_lot_sf) >= 2 THEN 'B'::scoretierenum
             ELSE 'C'::scoretierenum
         END,
-        FLOOR(p.lot_sf / z.min_lot_sf)::int,
+        -- Provisional conservative split estimate; refined later by subdivision/rule engine.
+        LEAST(
+            FLOOR(p.lot_sf / z.min_lot_sf),
+            COALESCE(
+                FLOOR(NULLIF(p.frontage_ft, 0) / 60),
+                FLOOR(p.lot_sf / z.min_lot_sf) - 1
+            )
+        )::int,
         COALESCE(p.assessed_value, 0),
         false,
         false,

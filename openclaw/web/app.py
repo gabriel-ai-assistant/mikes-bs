@@ -241,6 +241,12 @@ def get_candidates_api(
                 "owner": c.parcel.owner_name,
                 "tier": c.score_tier.value if c.score_tier else None,
                 "splits": c.potential_splits,
+                "splits_min": c.splits_min,
+                "splits_max": c.splits_max,
+                "splits_confidence": c.splits_confidence,
+                "subdivision_access_mode": c.subdivision_access_mode,
+                "economic_margin_pct": c.economic_margin_pct,
+                "arbitrage_depth_score": c.arbitrage_depth_score,
                 "tags": c.tags or [],
             }
             for c in rows
@@ -297,6 +303,12 @@ def candidate_detail(candidate_id: str, session: Session = Depends(db)):
         "improvement_value": p.improvement_value,
         "total_value": p.total_value,
         "splits": c.potential_splits,
+        "splits_min": c.splits_min,
+        "splits_max": c.splits_max,
+        "splits_confidence": c.splits_confidence,
+        "subdivision_access_mode": c.subdivision_access_mode,
+        "economic_margin_pct": c.economic_margin_pct,
+        "arbitrage_depth_score": c.arbitrage_depth_score,
         "land_value": c.estimated_land_value,
         "profit": c.estimated_profit,
         "margin_pct": c.estimated_margin_pct,
@@ -309,6 +321,12 @@ def candidate_detail(candidate_id: str, session: Session = Depends(db)):
             "feasibility": c.subdivision_feasibility,
             "score": c.subdivisibility_score,
             "flags": c.subdivision_flags or [],
+            "splits_min": c.splits_min,
+            "splits_max": c.splits_max,
+            "splits_confidence": c.splits_confidence,
+            "access_mode": c.subdivision_access_mode,
+            "economic_margin_pct": c.economic_margin_pct,
+            "arbitrage_depth_score": c.arbitrage_depth_score,
             "feasible_splits": next(
                 (int(r.split("_")[-1]) for r in reason_codes if r.startswith("SUBDIV_FEASIBLE_SPLITS_")),
                 None,
@@ -821,4 +839,3 @@ def reject_proposal(proposal_id: int, session: Session = Depends(db)):
     """), {'id': proposal_id})
     session.commit()
     return {'ok': True}
-

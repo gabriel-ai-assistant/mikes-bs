@@ -118,7 +118,17 @@
                 <td class="fw-semibold">{{ c.parcel.address or "—" }}</td>
                 <td class="text-muted small">{{ c.parcel.owner_name or "—" }}</td>
                 <td class="small">{{ c.parcel.lot_sf | acres }}</td>
-                <td><span class="badge bg-success">{{ c.potential_splits }}</span></td>
+                <td>
+                  <span class="badge bg-success">{{ c.potential_splits }}</span>
+                  {% if c.splits_min is not none and c.splits_max is not none %}
+                  <div class="small text-muted">{{ c.splits_min }}-{{ c.splits_max }}</div>
+                  {% endif %}
+                  {% if c.splits_confidence %}
+                  <span class="badge {% if c.splits_confidence == 'HIGH' %}conf-badge-high{% elif c.splits_confidence == 'MEDIUM' %}conf-badge-medium{% else %}conf-badge-low{% endif %}">
+                    {{ c.splits_confidence }}
+                  </span>
+                  {% endif %}
+                </td>
                 <td class="small">{{ c.estimated_land_value | money }}</td>
                 <td><button class='btn btn-sm btn-outline-primary py-0' onclick='openCandidateModal("{{ c.id }}", "{{ c.parcel.id }}")'>Details</button></td>
               </tr>
@@ -226,6 +236,22 @@ function tierBadgeClass(tier) {
 function tierBadgeStyle(tier) {
   return tier === 'D' ? 'background:#fd7e14' : '';
 }
+function confBadgeClass(conf) {
+  if (conf === 'HIGH') return 'conf-badge-high';
+  if (conf === 'MEDIUM') return 'conf-badge-medium';
+  return 'conf-badge-low';
+}
+const TAG_LABELS = {
+  RISK_WIDTH_CONSTRAINED: 'Width ⚠',
+  RISK_ACCESS_TRACT_REQUIRED: 'Shared Access',
+  RISK_ARV_MARGIN_THIN: 'Thin Margin ⚠',
+  RISK_ECON_LOSS_AT_ASK: 'Loss at Ask ❌',
+  RISK_INFILL_PRICED_IN: 'Priced In',
+  EDGE_ARBITRAGE_DEPTH_HIGH: 'Deep Arbitrage 🎯',
+};
+function chipText(tag) {
+  return TAG_LABELS[tag] || tag;
+}
 
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -265,7 +291,7 @@ async function openCandidateModal(id, parcelId='') {
     `<span class="badge ${tierCls} me-2" ${tierStyle}>Tier ${d.tier || '?'}</span>${d.address || 'No address'}`;
 
   const tagsHtml = (d.tags || []).map(t =>
-    `<span class="badge me-1 mb-1" style="background:#e8f4fd;color:#0d6efd;border:1px solid #bee5fd">${t}</span>`
+    `<span class="badge me-1 mb-1" style="background:#e8f4fd;color:#0d6efd;border:1px solid #bee5fd">${chipText(escHtml(t))}</span>`
   ).join('');
   const sub = d.subdivision || null;
   const subBadgeCls = sub?.feasibility === 'LIKELY'
@@ -279,19 +305,27 @@ async function openCandidateModal(id, parcelId='') {
       ? '<span class="badge text-dark border me-2" style="background:#fff3cd;border-color:#ffda6a !important;">LONG PLAT</span><span class="text-muted small">2-3 years · Full process</span>'
       : '<span class="badge bg-secondary">NOT FEASIBLE</span>');
   const subFlagsHtml = (sub?.flags || []).map(f =>
-    `<span class="badge me-1 mb-1 ${f.startsWith('EDGE_') ? 'bg-success-subtle text-success border border-success' : (f.startsWith('RISK_') ? 'bg-danger-subtle text-danger border border-danger' : 'bg-light text-dark border')}">${escHtml(f)}</span>`
+    `<span class="badge me-1 mb-1 ${f.startsWith('EDGE_') ? 'bg-success-subtle text-success border border-success' : (f.startsWith('RISK_') ? 'bg-danger-subtle text-danger border border-danger' : 'bg-light text-dark border')}">${chipText(escHtml(f))}</span>`
   ).join('');
   const subdivisionHtml = sub ? `
       <div class="col-12">
         <h6 class="fw-bold text-muted text-uppercase small mb-2">🧭 Subdivision Assessment</h6>
         <div class="d-flex align-items-center justify-content-between mb-2">
           <span class="badge ${subBadgeCls} px-2 py-1">${sub.feasibility || 'UNKNOWN'}</span>
-          <span class="small text-muted">Feasible Splits: <span class="fw-semibold text-dark">${sub.feasible_splits ?? '—'}</span></span>
+          <span class="small text-muted">Splits Range: <span class="fw-semibold text-dark">${sub.splits_min ?? '—'}-${sub.splits_max ?? '—'}</span></span>
+        </div>
+        <div class="mb-2">
+          ${sub.splits_confidence ? `<span class="badge ${confBadgeClass(sub.splits_confidence)}">${sub.splits_confidence}</span>` : ''}
+          ${sub.access_mode ? `<span class="badge bg-secondary ms-1">${sub.access_mode}</span>` : ''}
         </div>
         <div class="mb-2">${platMeta}</div>
         <div class="mb-2">
           <span class="${sub.sewer ? 'text-success' : 'text-warning'} small fw-semibold me-3">${sub.sewer ? '✅ Sewer available' : '⚠ Septic required'}</span>
           <span class="${sub.access ? 'text-success' : 'text-danger'} small fw-semibold">${sub.access ? '✅ Access confirmed' : '⚠ Access unknown'}</span>
+        </div>
+        <div class="small text-muted mb-2">
+          Econ Margin: <span class="fw-semibold text-dark">${sub.economic_margin_pct == null ? '—' : (sub.economic_margin_pct * 100).toFixed(1) + '%'}</span>
+          · Arbitrage: <span class="fw-semibold text-dark">${sub.arbitrage_depth_score ?? '—'}</span>
         </div>
         <div class="small text-muted mb-1">Subdivision Score: <span class="fw-semibold text-dark">${sub.score ?? 0}</span>/100</div>
         <div class="progress" style="height:10px">
@@ -349,7 +383,8 @@ async function openCandidateModal(id, parcelId='') {
           <div class="col-auto">
             <div class="text-center p-3 rounded" style="background:#f0fdf4;min-width:80px">
               <div class="fs-2 fw-bold text-success">${d.splits ?? '—'}</div>
-              <div class="small text-muted">Potential Splits</div>
+              <div class="small text-muted">${d.splits_min ?? '—'}-${d.splits_max ?? '—'}</div>
+              ${d.splits_confidence ? `<div><span class="badge ${confBadgeClass(d.splits_confidence)}">${d.splits_confidence}</span></div>` : ''}
             </div>
           </div>
           <div class="col">

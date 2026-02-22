@@ -14,6 +14,8 @@ from typing import Optional
 from sqlalchemy import text
 from openclaw.db.session import SessionLocal
 from openclaw.analysis.subdivision import assess_subdivision, SUBDIVISION_SCORE_EFFECTS
+from openclaw.analysis.subdivision_econ import compute_economic_margin
+from openclaw.analysis.arbitrage import compute_arbitrage_depth, compute_zone_medians
 
 logger = logging.getLogger(__name__)
 
@@ -202,7 +204,7 @@ def rescore_all() -> dict:
                 c.reason_codes as existing_reasons,
                 p.present_use, p.owner_name, p.zone_code,
                 p.lot_sf, p.assessed_value, p.improvement_value, p.total_value,
-                p.address, p.county
+                p.address, p.county, p.frontage_ft, p.parcel_width_ft, p.last_sale_price
             FROM candidates c
             JOIN parcels p ON c.parcel_id = p.id
         """)).mappings().all()
@@ -212,6 +214,10 @@ def rescore_all() -> dict:
         tier_counts = {t: 0 for t in 'ABCDEF'}
         excluded = 0
         updates = []
+        try:
+            compute_zone_medians(session)
+        except Exception:
+            logger.exception("Zone median cache build failed; underpricing component will be skipped")
 
         def _merge_unique(*items) -> list[str]:
             seen = set()
@@ -230,15 +236,33 @@ def rescore_all() -> dict:
                 "zone_code": row.get("zone_code"),
                 "lot_sf": row.get("lot_sf"),
                 "address": row.get("address"),
+                "frontage_ft": row.get("frontage_ft"),
+                "parcel_width_ft": row.get("parcel_width_ft"),
             }
-            tier, score, exclude, tags, reasons = evaluate_candidate(candidate, rules)
             sub = assess_subdivision(candidate, parcel)
-            for flag in sub.flags:
+            candidate["potential_splits"] = sub.splits_most_likely
+
+            tier, score, exclude, tags, reasons = evaluate_candidate(candidate, rules)
+            econ_margin, econ_tags, econ_reasons = compute_economic_margin(
+                candidate,
+                splits=sub.splits_most_likely,
+                zone_code=row.get("zone_code") or "",
+            )
+            pre_arb_tags = _merge_unique(tags, sub.flags, econ_tags)
+            arb_score, arb_tags, arb_reasons = compute_arbitrage_depth(candidate, tags=pre_arb_tags)
+
+            for flag in _merge_unique(sub.flags, econ_tags, arb_tags):
                 score += SUBDIVISION_SCORE_EFFECTS.get(flag, 0)
             score = min(max(score, 0), 100)
 
-            merged_tags = _merge_unique(row.get("existing_tags"), tags, sub.flags)
-            merged_reasons = _merge_unique(row.get("existing_reasons"), reasons, sub.reasons)
+            merged_tags = _merge_unique(row.get("existing_tags"), tags, sub.flags, econ_tags, arb_tags)
+            merged_reasons = _merge_unique(
+                row.get("existing_reasons"),
+                reasons,
+                sub.reasons,
+                econ_reasons,
+                arb_reasons,
+            )
 
             if exclude:
                 excluded += 1
@@ -246,11 +270,18 @@ def rescore_all() -> dict:
                     'id': str(row['candidate_id']),
                     'tier': 'F',
                     'score': 0,
+                    'potential_splits': sub.splits_most_likely,
                     'tags': merged_tags,
                     'reasons': merged_reasons,
                     'sub_score': sub.score,
                     'sub_feasibility': sub.feasibility,
                     'sub_flags': sub.flags,
+                    'splits_min': sub.splits_min,
+                    'splits_max': sub.splits_max,
+                    'splits_confidence': sub.splits_confidence,
+                    'sub_access_mode': sub.access_mode,
+                    'arbitrage_depth_score': arb_score,
+                    'economic_margin_pct': econ_margin,
                 })
             else:
                 tier = score_to_tier(score)
@@ -259,11 +290,18 @@ def rescore_all() -> dict:
                     'id': str(row['candidate_id']),
                     'tier': tier,
                     'score': score,
+                    'potential_splits': sub.splits_most_likely,
                     'tags': merged_tags,
                     'reasons': merged_reasons,
                     'sub_score': sub.score,
                     'sub_feasibility': sub.feasibility,
                     'sub_flags': sub.flags,
+                    'splits_min': sub.splits_min,
+                    'splits_max': sub.splits_max,
+                    'splits_confidence': sub.splits_confidence,
+                    'sub_access_mode': sub.access_mode,
+                    'arbitrage_depth_score': arb_score,
+                    'economic_margin_pct': econ_margin,
                 })
 
         # Ensure columns exist
@@ -285,6 +323,24 @@ def rescore_all() -> dict:
         session.execute(text(
             "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS subdivision_flags TEXT[] DEFAULT '{}'"
         ))
+        session.execute(text(
+            "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS splits_min INTEGER"
+        ))
+        session.execute(text(
+            "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS splits_max INTEGER"
+        ))
+        session.execute(text(
+            "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS splits_confidence VARCHAR(10)"
+        ))
+        session.execute(text(
+            "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS subdivision_access_mode VARCHAR(20)"
+        ))
+        session.execute(text(
+            "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS arbitrage_depth_score INTEGER"
+        ))
+        session.execute(text(
+            "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS economic_margin_pct DOUBLE PRECISION"
+        ))
         session.commit()
 
         # Bulk update via psycopg2 execute_values
@@ -296,23 +352,40 @@ def rescore_all() -> dict:
             UPDATE candidates SET
                 score_tier = v.tier::scoretierenum,
                 score = v.score,
+                potential_splits = v.potential_splits,
                 tags = v.tags::text[],
                 reason_codes = v.reasons::text[],
                 subdivisibility_score = v.sub_score,
                 subdivision_feasibility = v.sub_feasibility,
-                subdivision_flags = v.sub_flags::text[]
-            FROM (VALUES %s) AS v(id, tier, score, tags, reasons, sub_score, sub_feasibility, sub_flags)
+                subdivision_flags = v.sub_flags::text[],
+                splits_min = v.splits_min,
+                splits_max = v.splits_max,
+                splits_confidence = v.splits_confidence,
+                subdivision_access_mode = v.sub_access_mode,
+                arbitrage_depth_score = v.arbitrage_depth_score,
+                economic_margin_pct = v.economic_margin_pct
+            FROM (VALUES %s) AS v(
+                id, tier, score, potential_splits, tags, reasons, sub_score, sub_feasibility, sub_flags,
+                splits_min, splits_max, splits_confidence, sub_access_mode, arbitrage_depth_score, economic_margin_pct
+            )
             WHERE candidates.id = v.id::uuid
         """, [
             (
                 u['id'],
                 u['tier'],
                 u['score'],
+                u['potential_splits'],
                 u['tags'],
                 u['reasons'],
                 u['sub_score'],
                 u['sub_feasibility'],
                 u['sub_flags'],
+                u['splits_min'],
+                u['splits_max'],
+                u['splits_confidence'],
+                u['sub_access_mode'],
+                u['arbitrage_depth_score'],
+                u['economic_margin_pct'],
             )
             for u in updates
         ])
