@@ -7,16 +7,16 @@ from pathlib import Path
 
 from typing import List, Optional
 
-from fastapi import FastAPI, Request, Depends, Query
+from fastapi import FastAPI, Request, Depends, Query, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session, joinedload
 
-from openclaw.db.session import get_session
+from openclaw.db.session import get_session, SessionLocal
 from openclaw.db.models import (
-    Parcel, Candidate, Lead, ZoningRule,
+    Parcel, Candidate, Lead, ZoningRule, FeasibilityResult,
     ScoreTierEnum, LeadStatusEnum, CountyEnum,
 )
 
@@ -42,6 +42,8 @@ def fmt_sqft(v):
 templates.env.filters["money"] = fmt_money
 templates.env.filters["acres"] = fmt_acres
 templates.env.filters["sqft"] = fmt_sqft
+
+_feasibility_jobs: dict[str, dict] = {}
 
 
 def db():
@@ -154,6 +156,20 @@ def candidates_page(
     q = q.order_by(sort_map.get(sort, Candidate.potential_splits.desc()))
     rows = q.limit(500).all()
 
+    parcel_ids = [str(c.parcel_id) for c in rows]
+    feas_rows = []
+    if parcel_ids:
+        feas_rows = session.execute(text("""
+            SELECT DISTINCT ON (parcel_id)
+                parcel_id::text AS parcel_id,
+                best_score
+            FROM feasibility_results
+            WHERE status = 'complete'
+              AND parcel_id::text = ANY(:parcel_ids)
+            ORDER BY parcel_id, completed_at DESC NULLS LAST, created_at DESC
+        """), {"parcel_ids": parcel_ids}).mappings().all()
+    feas_map = {r["parcel_id"]: r["best_score"] for r in feas_rows}
+
     # Load zone labels from zoning_rules
     zone_labels = dict(
         session.query(ZoningRule.zone_code, ZoningRule.notes)
@@ -168,6 +184,7 @@ def candidates_page(
         "wetland": wetland, "ag": ag,
         "use_type": use_type,
         "tags": tags or "", "tags_mode": tags_mode,
+        "feasibility_scores": feas_map,
     })
 
 
@@ -243,6 +260,21 @@ def get_candidates_api(
     }
     q = q.order_by(sort_map.get(sort, Candidate.potential_splits.desc()))
     rows = q.offset(offset).limit(limit).all()
+
+    parcel_ids = [str(c.parcel_id) for c, _lat, _lng in rows]
+    feas_rows = []
+    if parcel_ids:
+        feas_rows = session.execute(text("""
+            SELECT DISTINCT ON (parcel_id)
+                parcel_id::text AS parcel_id,
+                best_score,
+                best_layout_id
+            FROM feasibility_results
+            WHERE status = 'complete'
+              AND parcel_id::text = ANY(:parcel_ids)
+            ORDER BY parcel_id, completed_at DESC NULLS LAST, created_at DESC
+        """), {"parcel_ids": parcel_ids}).mappings().all()
+    feas_map = {r["parcel_id"]: {"score": r["best_score"], "layout": r["best_layout_id"]} for r in feas_rows}
     return {
         "total": total,
         "count": len(rows),
@@ -262,6 +294,8 @@ def get_candidates_api(
                 "economic_margin_pct": c.economic_margin_pct,
                 "arbitrage_depth_score": c.arbitrage_depth_score,
                 "tags": c.tags or [],
+                "feasibility_score": (feas_map.get(str(c.parcel_id)) or {}).get("score"),
+                "feasibility_best_layout": (feas_map.get(str(c.parcel_id)) or {}).get("layout"),
                 "lat": float(lat) if lat is not None else None,
                 "lng": float(lng) if lng is not None else None,
             }
@@ -313,6 +347,13 @@ def candidate_detail(candidate_id: str, session: Session = Depends(db)):
     lat = float(coords.lat) if coords and coords.lat else None
     lng = float(coords.lng) if coords and coords.lng else None
     reason_codes = c.reason_codes or []
+    feas = session.execute(text("""
+        SELECT best_score, best_layout_id, status
+        FROM feasibility_results
+        WHERE parcel_id = :pid
+        ORDER BY completed_at DESC NULLS LAST, created_at DESC
+        LIMIT 1
+    """), {"pid": str(c.parcel_id)}).mappings().first()
 
     return {
         "id": str(c.id),
@@ -369,6 +410,7 @@ def candidate_detail(candidate_id: str, session: Session = Depends(db)):
         },
         "lat": lat,
         "lng": lng,
+        "feasibility": dict(feas) if feas else None,
     }
 
 
@@ -551,6 +593,7 @@ def property_detail(parcel_id: str, request: Request, session: Session = Depends
     # Get notes and feedback if we have a candidate
     notes = []
     feedback = {"thumbs_up": 0, "thumbs_down": 0}
+    feasibility = None
     if c:
         note_rows = session.execute(text("""
             SELECT note, author, created_at FROM candidate_notes
@@ -569,6 +612,14 @@ def property_detail(parcel_id: str, request: Request, session: Session = Depends
             "thumbs_down": int(fb_row.thumbs_down or 0),
         }
 
+    feasibility = session.execute(text("""
+        SELECT status, best_layout_id, best_score, result_json, created_at, completed_at
+        FROM feasibility_results
+        WHERE parcel_id = :pid
+        ORDER BY completed_at DESC NULLS LAST, created_at DESC
+        LIMIT 1
+    """), {"pid": str(p.id)}).mappings().first()
+
     return templates.TemplateResponse("property.html", {
         "request": request,
         "p": p,
@@ -578,9 +629,139 @@ def property_detail(parcel_id: str, request: Request, session: Session = Depends
         "lng": lng,
         "notes": notes,
         "feedback": feedback,
+        "feasibility": dict(feasibility) if feasibility else None,
         "fmt_money": fmt_money,
         "fmt_acres": fmt_acres,
         "fmt_sqft": fmt_sqft,
+    })
+
+
+# ── Feasibility ───────────────────────────────────────────────────────────
+
+def _run_feasibility_job(parcel_id: str) -> None:
+    from openclaw.analysis.feasibility.orchestrator import run_feasibility
+
+    session = SessionLocal()
+    try:
+        parcel = session.query(Parcel).filter(Parcel.parcel_id == parcel_id).first()
+        if not parcel:
+            _feasibility_jobs[parcel_id] = {"status": "failed", "error": "parcel not found"}
+            return
+
+        _feasibility_jobs[parcel_id] = {"status": "running", "started_at": datetime.utcnow().isoformat()}
+
+        fr = FeasibilityResult(parcel_id=parcel.id, status="running")
+        session.add(fr)
+        session.commit()
+        session.refresh(fr)
+
+        try:
+            ctx = run_feasibility(parcel_id=parcel_id)
+            best = ctx.layouts[0] if ctx.layouts else {}
+            result_json = {
+                "parcel_id": parcel_id,
+                "tags": ctx.tags,
+                "warnings": ctx.warnings,
+                "metrics": ctx.metrics,
+                "layouts": [
+                    {
+                        "id": l.get("id"),
+                        "strategy": l.get("strategy"),
+                        "lot_count": l.get("lot_count"),
+                        "score": l.get("score"),
+                        "tags": l.get("tags", []),
+                        "cost_estimate": l.get("cost_estimate", {}),
+                    }
+                    for l in ctx.layouts
+                ],
+                "best_layout": best.get("id"),
+                "best_score": best.get("score"),
+                "exports": ctx.export_paths,
+            }
+
+            fr.status = "complete"
+            fr.result_json = result_json
+            fr.tags = ctx.tags
+            fr.best_layout_id = best.get("id")
+            fr.best_score = best.get("score")
+            fr.completed_at = datetime.utcnow()
+            session.commit()
+            _feasibility_jobs[parcel_id] = {"status": "complete", "result": result_json}
+        except Exception as exc:
+            fr.status = "failed"
+            fr.result_json = {"error": str(exc)}
+            fr.completed_at = datetime.utcnow()
+            session.commit()
+            _feasibility_jobs[parcel_id] = {"status": "failed", "error": str(exc)}
+    finally:
+        session.close()
+
+
+@app.post("/api/feasibility/{parcel_id}")
+async def run_feasibility_api(parcel_id: str, background_tasks: BackgroundTasks, session: Session = Depends(db)):
+    parcel = session.query(Parcel).filter(Parcel.parcel_id == parcel_id).first()
+    if not parcel:
+        return JSONResponse({"error": "parcel not found"}, status_code=404)
+
+    _feasibility_jobs[parcel_id] = {"status": "pending", "queued_at": datetime.utcnow().isoformat()}
+    background_tasks.add_task(_run_feasibility_job, parcel_id)
+    return {"ok": True, "job_id": parcel_id, "status": "pending"}
+
+
+@app.get("/api/feasibility/{parcel_id}/status")
+async def feasibility_status(parcel_id: str, session: Session = Depends(db)):
+    parcel = session.query(Parcel).filter(Parcel.parcel_id == parcel_id).first()
+    if not parcel:
+        return JSONResponse({"error": "parcel not found"}, status_code=404)
+
+    latest = session.execute(text("""
+        SELECT status, best_layout_id, best_score, created_at, completed_at
+        FROM feasibility_results
+        WHERE parcel_id = :pid
+        ORDER BY completed_at DESC NULLS LAST, created_at DESC
+        LIMIT 1
+    """), {"pid": str(parcel.id)}).mappings().first()
+
+    job_state = _feasibility_jobs.get(parcel_id, {})
+    return {"parcel_id": parcel_id, "job": job_state, "db": dict(latest) if latest else None}
+
+
+@app.get("/api/feasibility/{parcel_id}/result")
+async def feasibility_result(parcel_id: str, session: Session = Depends(db)):
+    parcel = session.query(Parcel).filter(Parcel.parcel_id == parcel_id).first()
+    if not parcel:
+        return JSONResponse({"error": "parcel not found"}, status_code=404)
+
+    latest = session.execute(text("""
+        SELECT status, result_json, tags, best_layout_id, best_score, created_at, completed_at
+        FROM feasibility_results
+        WHERE parcel_id = :pid
+        ORDER BY completed_at DESC NULLS LAST, created_at DESC
+        LIMIT 1
+    """), {"pid": str(parcel.id)}).mappings().first()
+    if not latest:
+        return JSONResponse({"error": "no result"}, status_code=404)
+    return dict(latest)
+
+
+@app.get("/feasibility/{parcel_id}", response_class=HTMLResponse)
+async def feasibility_page(parcel_id: str, request: Request, session: Session = Depends(db)):
+    parcel = session.query(Parcel).filter(Parcel.parcel_id == parcel_id).first()
+    if not parcel:
+        return HTMLResponse("<h3>Property not found</h3>", status_code=404)
+
+    latest = session.execute(text("""
+        SELECT status, result_json, tags, best_layout_id, best_score, created_at, completed_at
+        FROM feasibility_results
+        WHERE parcel_id = :pid
+        ORDER BY completed_at DESC NULLS LAST, created_at DESC
+        LIMIT 1
+    """), {"pid": str(parcel.id)}).mappings().first()
+
+    return templates.TemplateResponse("feasibility.html", {
+        "request": request,
+        "parcel": parcel,
+        "feasibility": dict(latest) if latest else None,
     })
 
 

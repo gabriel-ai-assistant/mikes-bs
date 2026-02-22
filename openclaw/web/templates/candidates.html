@@ -161,6 +161,8 @@
           </td>
           <td class="small">{{ c.estimated_land_value | money }}</td>
           <td class="small">
+            {% set feas_score = feasibility_scores.get(c.parcel_id|string) if feasibility_scores else None %}
+            {% if feas_score is not none %}<span class="badge bg-info text-dark" title="Subdivision feasibility score">Feas {{ "%.0f"|format(feas_score) }}</span>{% endif %}
             {% if c.has_critical_area_overlap %}<span class="badge bg-danger" title="Wetland overlap">🌿 Wetland</span>{% endif %}
             {% if c.flagged_for_review %}<span class="badge bg-warning text-dark" title="Ag notification zone">🚜 Ag Zone</span>{% endif %}
             {% for t in c.tags or [] %}
@@ -534,6 +536,7 @@ async function openCandidateModal(id, parcelId='') {
           <tr><td class="text-muted">Zone</td><td><strong>${d.zone_code || '—'}</strong>${d.zone_label ? '<br><span class="text-muted small">'+d.zone_label+'</span>' : ''}</td></tr>
           <tr><td class="text-muted">Use Code</td><td>${d.present_use || '—'}</td></tr>
           ${d.score != null ? `<tr><td class="text-muted">Score</td><td><span class="badge bg-secondary">${d.score} pts</span></td></tr>` : ''}
+          ${d.feasibility && d.feasibility.best_score != null ? `<tr><td class="text-muted">Feasibility</td><td><span class="badge bg-info text-dark">${Number(d.feasibility.best_score).toFixed(1)}</span></td></tr>` : ''}
         </table>
       </div>
 

@@ -1,0 +1,8 @@
+{
+  "lot_count": 30,
+  "constraint_penalty": -30,
+  "driveway_penalty": -20,
+  "envelope_penalty": -20,
+  "short_plat_bonus": 10,
+  "notes": "Values can be overridden via FEAS_LOT_COUNT, FEAS_CONSTRAINT_PENALTY, FEAS_DRIVEWAY_PENALTY, FEAS_ENVELOPE_PENALTY, FEAS_SHORT_PLAT_BONUS"
+}

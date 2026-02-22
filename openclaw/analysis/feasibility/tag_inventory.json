@@ -1,0 +1,46 @@
+{
+  "sources": {
+    "weights": "openclaw/analysis/edge_config.py",
+    "producers": "openclaw/analysis/tagger.py",
+    "consumers": "openclaw/analysis/rule_engine.py"
+  },
+  "edge_weights": {
+    "EDGE_SNOCO_LSA_R5_RD_FR": 35,
+    "EDGE_SNOCO_RUTA_ARBITRAGE": 30,
+    "EDGE_WA_HB1110_MIDDLE_HOUSING": 25,
+    "EDGE_WA_UNIT_LOT_SUBDIVISION": 20,
+    "EDGE_SNOCO_RURAL_CLUSTER_BONUS": 15,
+    "RISK_PENALTY_PER_TAG": -8
+  },
+  "producer_tags": {
+    "EDGE": [
+      "EDGE_SNOCO_LSA_R5_RD_FR",
+      "EDGE_SNOCO_RURAL_CLUSTER_BONUS",
+      "EDGE_SNOCO_RUTA_ARBITRAGE",
+      "EDGE_WA_HB1110_MIDDLE_HOUSING",
+      "EDGE_WA_UNIT_LOT_SUBDIVISION",
+      "EDGE_UGA_STATUS_UNKNOWN"
+    ],
+    "RISK": [
+      "RISK_ACCESS_UNKNOWN",
+      "RISK_CRITICAL_AREAS",
+      "RISK_LOT_TOO_SMALL",
+      "RISK_SEPTIC_UNKNOWN",
+      "RISK_WATER_UNKNOWN",
+      "RISK_RUTA_DATA_UNAVAILABLE",
+      "RISK_HB1110_DATA_UNAVAILABLE",
+      "RISK_UNIT_LOT_DATA_UNAVAILABLE",
+      "RISK_INSIDE_UGA"
+    ]
+  },
+  "rule_engine_consumption": {
+    "reads_tags_for_rules": true,
+    "applies_edge_boosts": true,
+    "applies_risk_penalty_cap": -30,
+    "supports_tag_contains_operator": true
+  },
+  "notes": [
+    "Additional tags are also produced in subdivision.py, subdivision_econ.py, and arbitrage.py and merged into candidates.tags during rescore_all().",
+    "Current inventory is based on static code inspection before feasibility engine integration."
+  ]
+}

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Feasibility — {{ parcel.parcel_id }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0">Feasibility Report</h4>
+    <div class="text-muted small">Parcel {{ parcel.parcel_id }} · {{ parcel.address or 'No address' }}</div>
+  </div>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ base_url }}/property/{{ parcel.parcel_id }}">Back to Property</a>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body d-flex flex-wrap gap-3 align-items-center">
+    <button class="btn btn-primary btn-sm" onclick="runFeasibility('{{ parcel.parcel_id }}')">Run Feasibility Analysis</button>
+    <button class="btn btn-outline-secondary btn-sm" onclick="refreshStatus()">Refresh Status</button>
+    <span id="statusPill" class="badge bg-secondary">{{ feasibility.status if feasibility else 'none' }}</span>
+    {% if feasibility and feasibility.best_score is not none %}
+    <span class="badge bg-info text-dark">Best Score {{ '%.1f'|format(feasibility.best_score) }}</span>
+    {% endif %}
+    {% if feasibility and feasibility.best_layout_id %}
+    <span class="badge bg-light text-dark border">Best Layout {{ feasibility.best_layout_id }}</span>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body">
+    <h6 class="fw-bold">Summary</h6>
+    <pre id="resultBox" class="small mb-0" style="white-space:pre-wrap">{{ feasibility.result_json | tojson(indent=2) if feasibility and feasibility.result_json else 'No result JSON yet.' }}</pre>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const BASE = "{{ base_url }}";
+const PARCEL_ID = "{{ parcel.parcel_id }}";
+
+async function runFeasibility(parcelId) {
+  const res = await fetch(`${BASE}/api/feasibility/${parcelId}`, {method:'POST'});
+  if (!res.ok) {
+    alert('Failed to queue feasibility analysis');
+    return;
+  }
+  refreshStatus();
+}
+
+async function refreshStatus() {
+  const statusRes = await fetch(`${BASE}/api/feasibility/${PARCEL_ID}/status`);
+  const statusData = await statusRes.json();
+  const s = (statusData.db && statusData.db.status) || (statusData.job && statusData.job.status) || 'unknown';
+  document.getElementById('statusPill').textContent = s;
+
+  const resultRes = await fetch(`${BASE}/api/feasibility/${PARCEL_ID}/result`);
+  if (resultRes.ok) {
+    const resultData = await resultRes.json();
+    document.getElementById('resultBox').textContent = JSON.stringify(resultData.result_json || resultData, null, 2);
+  }
+}
+</script>
+{% endblock %}

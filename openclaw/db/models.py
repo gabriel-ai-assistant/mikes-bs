@@ -9,7 +9,7 @@ from sqlalchemy import (
     Column, String, Integer, Float, Boolean, Text, Date, DateTime,
     Enum, ForeignKey, UniqueConstraint, PrimaryKeyConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID, ARRAY
+from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -65,6 +65,7 @@ class Parcel(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     candidates = relationship("Candidate", back_populates="parcel")
+    feasibility_results = relationship("FeasibilityResult", back_populates="parcel")
 
 
 class ZoningRule(Base):
@@ -153,3 +154,19 @@ class RutaBoundary(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String)
     geometry = Column(Geometry("GEOMETRY", srid=4326))
+
+
+class FeasibilityResult(Base):
+    __tablename__ = "feasibility_results"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    parcel_id = Column(UUID(as_uuid=True), ForeignKey("parcels.id"), nullable=False, index=True)
+    status = Column(String(20), nullable=False, default="pending")
+    result_json = Column(JSONB)
+    tags = Column(ARRAY(String), default=list)
+    best_layout_id = Column(String)
+    best_score = Column(Float)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime)
+
+    parcel = relationship("Parcel", back_populates="feasibility_results")
