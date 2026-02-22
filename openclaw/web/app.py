@@ -4,6 +4,7 @@ import json
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import quote_plus
 
 from typing import List, Optional
 
@@ -44,6 +45,7 @@ templates.env.filters["acres"] = fmt_acres
 templates.env.filters["sqft"] = fmt_sqft
 
 _feasibility_jobs: dict[str, dict] = {}
+LEAD_STATUSES = [s.value for s in LeadStatusEnum]
 
 
 def db():
@@ -120,10 +122,14 @@ def candidates_page(
         .options(joinedload(Candidate.parcel))
     )
     if search:
+        # TODO(FIX-I Phase 2): if this query exceeds ~200ms, enable pg_trgm:
+        #   CREATE EXTENSION IF NOT EXISTS pg_trgm;
+        #   CREATE INDEX idx_candidates_display_trgm ON candidates USING GIN (display_text gin_trgm_ops);
         q = q.filter(
-            Parcel.address.ilike(f"%{search}%") |
-            Parcel.owner_name.ilike(f"%{search}%") |
-            Parcel.owner_address.ilike(f"%{search}%")
+            func.coalesce(
+                Candidate.display_text,
+                func.concat_ws(" ", Parcel.address, func.coalesce(Candidate.owner_name_canonical, Parcel.owner_name)),
+            ).ilike(f"%{search}%")
         )
     if tier in ("A", "B", "C", "D", "E", "F"):
         q = q.filter(Candidate.score_tier == ScoreTierEnum(tier))
@@ -227,9 +233,10 @@ def get_candidates_api(
     )
     if search:
         q = q.filter(
-            Parcel.address.ilike(f"%{search}%") |
-            Parcel.owner_name.ilike(f"%{search}%") |
-            Parcel.owner_address.ilike(f"%{search}%")
+            func.coalesce(
+                Candidate.display_text,
+                func.concat_ws(" ", Parcel.address, func.coalesce(Candidate.owner_name_canonical, Parcel.owner_name)),
+            ).ilike(f"%{search}%")
         )
     if tier in ("A", "B", "C", "D", "E", "F"):
         q = q.filter(Candidate.score_tier == ScoreTierEnum(tier))
@@ -283,7 +290,7 @@ def get_candidates_api(
                 "id": str(c.id),
                 "parcel_id": c.parcel.parcel_id,
                 "address": c.parcel.address,
-                "owner": c.parcel.owner_name,
+                "owner": c.owner_name_canonical or c.parcel.owner_name,
                 "tier": c.score_tier.value if c.score_tier else None,
                 "use_type": c.parcel.present_use,
                 "splits": c.potential_splits,
@@ -296,6 +303,7 @@ def get_candidates_api(
                 "tags": c.tags or [],
                 "feasibility_score": (feas_map.get(str(c.parcel_id)) or {}).get("score"),
                 "feasibility_best_layout": (feas_map.get(str(c.parcel_id)) or {}).get("layout"),
+                "display_text": c.display_text,
                 "lat": float(lat) if lat is not None else None,
                 "lng": float(lng) if lng is not None else None,
             }
@@ -366,7 +374,8 @@ def candidate_detail(candidate_id: str, session: Session = Depends(db)):
         "lot_acres": round(p.lot_sf / 43560, 2) if p.lot_sf else None,
         "zone_code": p.zone_code,
         "zone_label": zone_label,
-        "owner_name": p.owner_name,
+        "owner_name": c.owner_name_canonical or p.owner_name,
+        "owner_name_canonical": c.owner_name_canonical,
         "owner_address": p.owner_address,
         "present_use": p.present_use,
         "assessed_value": p.assessed_value,
@@ -387,6 +396,7 @@ def candidate_detail(candidate_id: str, session: Session = Depends(db)):
         "shoreline_flag": c.has_shoreline_overlap,
         "tags": c.tags or [],
         "reason_codes": reason_codes,
+        "bundle_data": c.bundle_data,
         "subdivision": {
             "feasibility": c.subdivision_feasibility,
             "score": c.subdivisibility_score,
@@ -427,19 +437,6 @@ async def submit_feedback(
 ):
     from sqlalchemy import text as sqlt
 
-    def tier_for_score(score: int) -> ScoreTierEnum:
-        if score >= 72:
-            return ScoreTierEnum.A
-        if score >= 58:
-            return ScoreTierEnum.B
-        if score >= 44:
-            return ScoreTierEnum.C
-        if score >= 30:
-            return ScoreTierEnum.D
-        if score >= 16:
-            return ScoreTierEnum.E
-        return ScoreTierEnum.F
-
     payload = {}
     try:
         payload = await request.json()
@@ -474,17 +471,7 @@ async def submit_feedback(
         return JSONResponse({"error": "candidate not found"}, status_code=404)
 
     current_score = int(candidate.score or 0)
-    if feedback_type == "thumbs_down":
-        current_score = max(0, current_score - 40)
-        candidate.score = current_score
-        candidate.score_tier = tier_for_score(current_score)
-    elif feedback_type == "thumbs_up":
-        # Manual override: boost score to at least 90 (Tier A) — human says it's a deal
-        current_score = max(90, current_score + 40)
-        candidate.score = current_score
-        candidate.score_tier = tier_for_score(current_score)
-
-    tier = candidate.score_tier.value if candidate.score_tier else tier_for_score(current_score).value
+    tier = candidate.score_tier.value if candidate.score_tier else None
     session.commit()
     return {"ok": True, "new_score": current_score, "new_tier": tier}
 
@@ -589,6 +576,14 @@ def property_detail(parcel_id: str, request: Request, session: Session = Depends
     """), {"pid": str(p.id)}).fetchone()
     lat = float(coords.lat) if coords and coords.lat else None
     lng = float(coords.lng) if coords and coords.lng else None
+    encoded_address = quote_plus((p.address or "").strip())
+    external_links = {
+        "nwmls": "https://www.nwmls.com/",
+        "zillow": f"https://www.zillow.com/homes/{encoded_address}_rb/" if encoded_address else "https://www.zillow.com/",
+        "redfin": f"https://www.redfin.com/search?q={encoded_address}" if encoded_address else "https://www.redfin.com/",
+        "snoco_tax": "https://www.snoco.org/proptax/",
+        "snoco_tax_hint": f"Search Parcel No: {p.parcel_id}",
+    }
 
     # Get notes and feedback if we have a candidate
     notes = []
@@ -630,6 +625,7 @@ def property_detail(parcel_id: str, request: Request, session: Session = Depends
         "notes": notes,
         "feedback": feedback,
         "feasibility": dict(feasibility) if feasibility else None,
+        "external_links": external_links,
         "fmt_money": fmt_money,
         "fmt_acres": fmt_acres,
         "fmt_sqft": fmt_sqft,
@@ -775,14 +771,14 @@ def leads_page(request: Request, session: Session = Depends(db)):
         .order_by(Lead.updated_at.desc())
         .limit(500).all()
     )
-    columns = {s: [] for s in LeadStatusEnum}
+    columns = {s: [] for s in LEAD_STATUSES}
     for lead in leads:
         columns.setdefault(lead.status, []).append(lead)
 
     return templates.TemplateResponse("leads.html", {
         "request": request,
         "columns": columns,
-        "statuses": LeadStatusEnum,
+        "statuses": LEAD_STATUSES,
     })
 
 
@@ -791,10 +787,9 @@ def update_lead_status(lead_id: str, status: str = Query(...), session: Session 
     lead = session.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         return JSONResponse({"error": "not found"}, status_code=404)
-    try:
-        lead.status = LeadStatusEnum(status)
-    except ValueError:
+    if status not in LEAD_STATUSES:
         return JSONResponse({"error": "invalid status"}, status_code=400)
+    lead.status = status
     session.commit()
     return {"ok": True}
 

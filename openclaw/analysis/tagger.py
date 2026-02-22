@@ -28,8 +28,10 @@ RISK TAGS (negative signals / constraints):
   RISK_HB1110_DATA_UNAVAILABLE   - HB1110 urban zones not configured; cannot confirm eligibility
   RISK_UNIT_LOT_DATA_UNAVAILABLE - Unit lot zones not configured; cannot confirm eligibility
 """
+import os
 
 SQFT_PER_ACRE = 43560.0
+VOTE_NET_THRESHOLD = int(os.getenv("VOTE_NET_THRESHOLD", "1"))
 
 
 def compute_tags(
@@ -68,6 +70,7 @@ def compute_tags(
     address = candidate.get("address")
     is_snohomish = county == "snohomish"
     is_rural_zone = zone in config.lsa_zones
+    vote_net = int(candidate.get("vote_net") or 0)
 
     # --- CONSTRAINTS GATE ---
     lsa_suppressed = False
@@ -148,5 +151,12 @@ def compute_tags(
     else:
         if not is_rural_zone:
             tags.append("RISK_UNIT_LOT_DATA_UNAVAILABLE")
+
+    # User feedback signal (all-time net vote; no weighting).
+    if vote_net >= VOTE_NET_THRESHOLD:
+        tags.append("EDGE_USER_UPVOTE")
+        reasons.append(
+            f"EDGE_USER_UPVOTE triggered: vote_net={vote_net}, threshold={VOTE_NET_THRESHOLD}"
+        )
 
     return tags, reasons

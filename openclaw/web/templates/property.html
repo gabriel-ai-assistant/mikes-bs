@@ -337,6 +337,20 @@
     </div>
     {% endif %}
 
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-transparent fw-bold small text-uppercase text-muted border-0 pb-0">🔗 External Links</div>
+      <div class="card-body">
+        <div class="d-grid gap-2">
+          <a href="{{ external_links.nwmls }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary text-start">NWMLS</a>
+          <a href="{{ external_links.zillow }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary text-start">Zillow</a>
+          <a href="{{ external_links.redfin }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary text-start">Redfin</a>
+          <a href="{{ external_links.snoco_tax }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary text-start">SnoCo Tax</a>
+          <button type="button" class="btn btn-outline-primary text-start" onclick="copyAddress('{{ (p.address or '')|e }}')">Copy Address</button>
+        </div>
+        <div class="small text-muted mt-2">{{ external_links.snoco_tax_hint }}</div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -486,6 +500,22 @@ async function addNote() {
 
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function copyAddress(address) {
+  if (!address) return;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(address);
+      return;
+    }
+  } catch (_err) {}
+  const ta = document.createElement('textarea');
+  ta.value = address;
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
 }
 
 async function runFeasibility(parcelId) {

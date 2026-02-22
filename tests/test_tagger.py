@@ -124,3 +124,16 @@ class TestScoreBoost:
         assert edge_score > flat_score, (
             f"Edge parcel should score higher: {edge_score} vs {flat_score}"
         )
+
+
+class TestUserVoteTag:
+    def test_vote_net_threshold_applies_upvote_tag(self):
+        p = make_parcel(vote_net=1)
+        tags, reasons = compute_tags(p, config=default_cfg())
+        assert "EDGE_USER_UPVOTE" in tags
+        assert any("EDGE_USER_UPVOTE" in r for r in reasons)
+
+    def test_zero_vote_net_does_not_apply_upvote_tag(self):
+        p = make_parcel(vote_net=0)
+        tags, _ = compute_tags(p, config=default_cfg())
+        assert "EDGE_USER_UPVOTE" not in tags

@@ -156,6 +156,7 @@ def evaluate_candidate(candidate: dict, rules: list[dict]) -> tuple[str, int, bo
         'EDGE_WA_HB1110_MIDDLE_HOUSING': _edge_cfg.weight_hb1110,
         'EDGE_WA_UNIT_LOT_SUBDIVISION': _edge_cfg.weight_unit_lot,
         'EDGE_SNOCO_RURAL_CLUSTER_BONUS': _edge_cfg.weight_rural_cluster,
+        'EDGE_USER_UPVOTE': _edge_cfg.weight_user_upvote,
     }
     for tag, weight in edge_boosts.items():
         if tag in tags:
@@ -204,7 +205,14 @@ def rescore_all() -> dict:
                 c.reason_codes as existing_reasons,
                 p.present_use, p.owner_name, p.zone_code,
                 p.lot_sf, p.assessed_value, p.improvement_value, p.total_value,
-                p.address, p.county, p.frontage_ft, p.parcel_width_ft, p.last_sale_price
+                p.address, p.county, p.frontage_ft, p.parcel_width_ft, p.last_sale_price,
+                COALESCE((
+                    SELECT
+                        COUNT(*) FILTER (WHERE cf.rating = 'up')
+                        - COUNT(*) FILTER (WHERE cf.rating = 'down')
+                    FROM candidate_feedback cf
+                    WHERE cf.candidate_id = c.id
+                ), 0) AS vote_net
             FROM candidates c
             JOIN parcels p ON c.parcel_id = p.id
         """)).mappings().all()
@@ -232,6 +240,10 @@ def rescore_all() -> dict:
 
         for row in rows:
             candidate = dict(row)
+            owner_name_canonical = (row.get("owner_name") or "").strip() or None
+            display_text = " ".join(
+                p for p in [row.get("address"), owner_name_canonical] if p
+            ) or None
             parcel = {
                 "zone_code": row.get("zone_code"),
                 "lot_sf": row.get("lot_sf"),
@@ -282,6 +294,8 @@ def rescore_all() -> dict:
                     'sub_access_mode': sub.access_mode,
                     'arbitrage_depth_score': arb_score,
                     'economic_margin_pct': econ_margin,
+                    'owner_name_canonical': owner_name_canonical,
+                    'display_text': display_text,
                 })
             else:
                 tier = score_to_tier(score)
@@ -302,6 +316,8 @@ def rescore_all() -> dict:
                     'sub_access_mode': sub.access_mode,
                     'arbitrage_depth_score': arb_score,
                     'economic_margin_pct': econ_margin,
+                    'owner_name_canonical': owner_name_canonical,
+                    'display_text': display_text,
                 })
 
         # Ensure columns exist
@@ -341,6 +357,12 @@ def rescore_all() -> dict:
         session.execute(text(
             "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS economic_margin_pct DOUBLE PRECISION"
         ))
+        session.execute(text(
+            "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS owner_name_canonical VARCHAR"
+        ))
+        session.execute(text(
+            "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS display_text TEXT"
+        ))
         session.commit()
 
         # Bulk update via psycopg2 execute_values
@@ -363,10 +385,13 @@ def rescore_all() -> dict:
                 splits_confidence = v.splits_confidence,
                 subdivision_access_mode = v.sub_access_mode,
                 arbitrage_depth_score = v.arbitrage_depth_score,
-                economic_margin_pct = v.economic_margin_pct
+                economic_margin_pct = v.economic_margin_pct,
+                owner_name_canonical = v.owner_name_canonical,
+                display_text = v.display_text
             FROM (VALUES %s) AS v(
                 id, tier, score, potential_splits, tags, reasons, sub_score, sub_feasibility, sub_flags,
-                splits_min, splits_max, splits_confidence, sub_access_mode, arbitrage_depth_score, economic_margin_pct
+                splits_min, splits_max, splits_confidence, sub_access_mode, arbitrage_depth_score, economic_margin_pct,
+                owner_name_canonical, display_text
             )
             WHERE candidates.id = v.id::uuid
         """, [
@@ -386,6 +411,8 @@ def rescore_all() -> dict:
                 u['sub_access_mode'],
                 u['arbitrage_depth_score'],
                 u['economic_margin_pct'],
+                u['owner_name_canonical'],
+                u['display_text'],
             )
             for u in updates
         ])

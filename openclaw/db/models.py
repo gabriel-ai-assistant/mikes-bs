@@ -10,7 +10,7 @@ from sqlalchemy import (
     Enum, ForeignKey, UniqueConstraint, PrimaryKeyConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import declarative_base, relationship, validates
 
 Base = declarative_base()
 
@@ -32,9 +32,11 @@ class ScoreTierEnum(enum.Enum):
 
 class LeadStatusEnum(enum.Enum):
     new = "new"
-    reviewed = "reviewed"
-    outreach = "outreach"
-    active = "active"
+    researching = "researching"
+    contacted = "contacted"
+    negotiating = "negotiating"
+    closed_won = "closed_won"
+    closed_lost = "closed_lost"
     dead = "dead"
 
 
@@ -94,6 +96,9 @@ class Candidate(Base):
     subdivision_access_mode = Column(String(20))
     arbitrage_depth_score = Column(Integer)
     economic_margin_pct = Column(Float)
+    owner_name_canonical = Column(String)
+    display_text = Column(Text)
+    bundle_data = Column(JSONB)
     estimated_land_value = Column(Integer)
     estimated_dev_cost = Column(Integer)
     estimated_build_cost = Column(Integer)
@@ -119,7 +124,7 @@ class Lead(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     candidate_id = Column(UUID(as_uuid=True), ForeignKey("candidates.id"), nullable=False)
-    status = Column(Enum(LeadStatusEnum), default=LeadStatusEnum.new)
+    status = Column(String, default=LeadStatusEnum.new.value, nullable=False)
     owner_phone = Column(String)
     owner_email = Column(String)
     notes = Column(Text)
@@ -130,6 +135,15 @@ class Lead(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     candidate = relationship("Candidate", back_populates="leads")
+
+    @validates("status")
+    def validate_status(self, _key, value):
+        if isinstance(value, LeadStatusEnum):
+            return value.value
+        allowed = {s.value for s in LeadStatusEnum}
+        if value not in allowed:
+            raise ValueError(f"Invalid lead status '{value}'")
+        return value
 
 
 class CriticalArea(Base):

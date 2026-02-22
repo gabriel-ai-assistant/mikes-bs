@@ -26,6 +26,7 @@ class EdgeConfig:
     weight_hb1110: int = field(default_factory=lambda: int(os.getenv("EDGE_WEIGHT_HB1110", "25")))
     weight_unit_lot: int = field(default_factory=lambda: int(os.getenv("EDGE_WEIGHT_UNIT_LOT", "20")))
     weight_rural_cluster: int = field(default_factory=lambda: int(os.getenv("EDGE_WEIGHT_RURAL_CLUSTER", "15")))
+    weight_user_upvote: int = field(default_factory=lambda: int(os.getenv("EDGE_WEIGHT_USER_UPVOTE", "8")))
     weight_risk_penalty: int = field(default_factory=lambda: int(os.getenv("EDGE_WEIGHT_RISK_PENALTY", "-8")))
 
 

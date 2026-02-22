@@ -26,7 +26,7 @@ COMP_SQL = text("""
         AND ST_DWithin(
             p.geometry::geography,
             (SELECT geometry::geography FROM parcels WHERE id = :parcel_id),
-            804.672  -- 0.5 miles in meters
+            804.672  -- 0.5 miles in meters (geography cast, never degrees)
         )
         AND p.id != :parcel_id
     ORDER BY p.last_sale_date DESC

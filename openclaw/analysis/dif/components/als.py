@@ -33,7 +33,7 @@ _ALS_COMP_SQL = text("""
         AND ST_DWithin(
             p.geometry::geography,
             (SELECT geometry::geography FROM parcels WHERE id = :parcel_id),
-            :radius_meters
+            :radius_meters  -- meters (geography cast), never degrees
         )
         AND p.id != :parcel_id
 """)

@@ -19,10 +19,10 @@
 <div class="empty-state"><i class="bi bi-kanban"></i><h4>No leads yet</h4><p>Leads are created from candidates. Run the pipeline first.</p></div>
 {% else %}
 <div class="kanban">
-{% set labels = {'new':'New','reviewed':'Reviewed','outreach':'Outreach','active':'Active','dead':'Dead'} %}
+{% set labels = {'new':'New','researching':'Researching','contacted':'Contacted','negotiating':'Negotiating','closed_won':'Closed Won','closed_lost':'Closed Lost','dead':'Dead'} %}
 {% for status in statuses %}
 <div class="kanban-col">
-  <h6>{{ labels.get(status.value, status.value) }} ({{ columns[status]|length }})</h6>
+  <h6>{{ labels.get(status, status) }} ({{ columns[status]|length }})</h6>
   {% for lead in columns[status] %}
   <div class="lead-card" data-bs-toggle="collapse" data-bs-target="#lead-{{ lead.id|string|replace('-','') }}">
     <div class="d-flex justify-content-between align-items-start">
@@ -44,7 +44,7 @@
       {% if lead.outcome %}<p class="mb-1" style="font-size:.85rem"><strong>Outcome:</strong> {{ lead.outcome }}</p>{% endif %}
       <div class="mt-2">
         <select class="form-select form-select-sm" onchange="updateStatus('{{ lead.id }}',this.value)">
-          {% for s in statuses %}<option value="{{ s.value }}"{% if lead.status==s %} selected{% endif %}>{{ labels.get(s.value, s.value) }}</option>{% endfor %}
+          {% for s in statuses %}<option value="{{ s }}"{% if lead.status==s %} selected{% endif %}>{{ labels.get(s, s) }}</option>{% endfor %}
         </select>
       </div>
     </div>
