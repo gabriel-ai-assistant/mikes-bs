@@ -1,0 +1,31 @@
+{
+  "objectIdFieldName": "OBJECTID",
+  "geometryType": "esriGeometryPolygon",
+  "spatialReference": {"wkid": 2285},
+  "fields": [
+    {"name": "OBJECTID", "type": "esriFieldTypeOID"},
+    {"name": "ZONE", "type": "esriFieldTypeString"},
+    {"name": "ZONE_CODE", "type": "esriFieldTypeString"}
+  ],
+  "features": [
+    {
+      "attributes": {
+        "OBJECTID": 1,
+        "ZONE": "R-9.6",
+        "ZONE_CODE": "R-9.6"
+      },
+      "geometry": {
+        "rings": [
+          [
+            [1319700.0, 371900.0],
+            [1320400.0, 371900.0],
+            [1320400.0, 372450.0],
+            [1319700.0, 372450.0],
+            [1319700.0, 371900.0]
+          ]
+        ],
+        "spatialReference": {"wkid": 2285}
+      }
+    }
+  ]
+}

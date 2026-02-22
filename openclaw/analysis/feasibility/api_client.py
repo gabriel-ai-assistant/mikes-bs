@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -17,6 +18,7 @@ from shapely.geometry import shape
 
 CACHE_DIR = Path("/tmp/feasibility_cache")
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
+FIXTURES_DIR = Path(__file__).resolve().parents[3] / "tests" / "fixtures"
 
 
 class FeasibilityAPIClient:
@@ -33,6 +35,53 @@ class FeasibilityAPIClient:
 
     def _sleep(self) -> None:
         time.sleep(self.delay_seconds)
+
+    def _offline_enabled(self) -> bool:
+        return os.environ.get("SNOCO_OFFLINE", "").lower() == "true"
+
+    def _constraint_fixture_key(self, url: str, layer_id: int) -> str:
+        u = url.lower()
+        if "watercourse" in u or "/nhd/" in u:
+            return "streams"
+        if "wetlands" in u:
+            return "wetlands"
+        if "nfhl" in u:
+            return "flood"
+        if "landslide" in u:
+            return "geology_landslide"
+        if "ground_response" in u:
+            return "geology_ground"
+        if "volcanic" in u:
+            return "geology_volcanic"
+        if "pds_utility_districts" in u:
+            return "utilities_water" if int(layer_id) == 0 else "utilities_sewer"
+        if "transportation" in u:
+            return "roads"
+        if "future_land_use" in u:
+            return "flu"
+        if "shoreline" in u:
+            return "shoreline"
+        if "septic_parcels" in u:
+            return "septic"
+        return "default"
+
+    def _offline_payload(self, url: str, layer_id: int) -> dict[str, Any]:
+        u = url.lower()
+        if "zoning" in u:
+            fixture = FIXTURES_DIR / "zoning_lookup.json"
+            return json.loads(fixture.read_text(encoding="utf-8"))
+        if "parcel" in u or "tax_parcels" in u:
+            fixture = FIXTURES_DIR / "parcel_feature.json"
+            return json.loads(fixture.read_text(encoding="utf-8"))
+
+        fixture = FIXTURES_DIR / "constraints_empty.json"
+        payload = json.loads(fixture.read_text(encoding="utf-8"))
+        if isinstance(payload, dict) and "layers" in payload:
+            key = self._constraint_fixture_key(url, layer_id)
+            layer_payload = payload["layers"].get(key) or payload["layers"].get("default") or {}
+            if isinstance(layer_payload, dict):
+                return layer_payload
+        return payload if isinstance(payload, dict) else {"features": []}
 
     def _request(self, url: str, params: dict[str, Any], expect_json: bool = True) -> Any:
         attempt = 0
@@ -57,13 +106,26 @@ class FeasibilityAPIClient:
 
         rows = []
         geoms = []
+        source_epsg = 4326
         for feat in features:
             geom = feat.get("geometry")
-            attrs = feat.get("attributes", {})
+            attrs = feat.get("attributes") or feat.get("properties", {})
             if not geom:
                 continue
             try:
-                geoms.append(shape(geom))
+                if isinstance(geom, dict) and "spatialReference" in geom:
+                    wkid = geom.get("spatialReference", {}).get("wkid")
+                    if wkid is not None:
+                        source_epsg = int(wkid)
+                parsed_geom = geom
+                if isinstance(geom, dict) and "rings" in geom:
+                    parsed_geom = {"type": "Polygon", "coordinates": geom["rings"]}
+                elif isinstance(geom, dict) and "paths" in geom:
+                    parsed_geom = {"type": "LineString", "coordinates": geom["paths"][0] if geom["paths"] else []}
+                elif isinstance(geom, dict) and "x" in geom and "y" in geom:
+                    parsed_geom = {"type": "Point", "coordinates": [geom["x"], geom["y"]]}
+
+                geoms.append(shape(parsed_geom))
                 rows.append(attrs)
             except Exception:
                 continue
@@ -71,9 +133,9 @@ class FeasibilityAPIClient:
         if not geoms:
             return gpd.GeoDataFrame(geometry=[], crs=f"EPSG:{out_crs}")
 
-        gdf = gpd.GeoDataFrame(rows, geometry=geoms, crs="EPSG:4326")
+        gdf = gpd.GeoDataFrame(rows, geometry=geoms, crs=f"EPSG:{source_epsg}")
         try:
-            return gdf.to_crs(epsg=out_crs)
+            return gdf if int(source_epsg) == int(out_crs) else gdf.to_crs(epsg=out_crs)
         except Exception:
             return gdf
 
@@ -88,6 +150,11 @@ class FeasibilityAPIClient:
         where: str = "1=1",
         out_sr: int = 2285,
     ) -> gpd.GeoDataFrame:
+        if self._offline_enabled():
+            payload = self._offline_payload(url=url, layer_id=layer_id)
+            features = payload.get("features", [])
+            return self._to_gdf(features, out_crs=out_sr)
+
         endpoint = f"{url.rstrip('/')}/{layer_id}/query"
         params: dict[str, Any] = {
             "f": "geojson",

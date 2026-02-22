@@ -1,0 +1,39 @@
+{
+  "objectIdFieldName": "OBJECTID",
+  "geometryType": "esriGeometryPolygon",
+  "spatialReference": {"wkid": 2285},
+  "fields": [
+    {"name": "OBJECTID", "type": "esriFieldTypeOID"},
+    {"name": "Parcel_ID", "type": "esriFieldTypeString"},
+    {"name": "GIS_ACRES", "type": "esriFieldTypeDouble"},
+    {"name": "GIS_SQ_FT", "type": "esriFieldTypeInteger"},
+    {"name": "address", "type": "esriFieldTypeString"},
+    {"name": "owner", "type": "esriFieldTypeString"},
+    {"name": "zone_code", "type": "esriFieldTypeString"}
+  ],
+  "features": [
+    {
+      "attributes": {
+        "OBJECTID": 1,
+        "Parcel_ID": "30053400401800",
+        "GIS_ACRES": 3.52,
+        "GIS_SQ_FT": 153331,
+        "address": "12345 204TH ST SE",
+        "owner": "TEST OWNER LLC",
+        "zone_code": "R-9.6"
+      },
+      "geometry": {
+        "rings": [
+          [
+            [1319800.0, 372000.0],
+            [1320300.0, 372000.0],
+            [1320300.0, 372306.662],
+            [1319800.0, 372306.662],
+            [1319800.0, 372000.0]
+          ]
+        ],
+        "spatialReference": {"wkid": 2285}
+      }
+    }
+  ]
+}

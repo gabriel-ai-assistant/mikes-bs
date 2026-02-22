@@ -1,0 +1,92 @@
+{
+  "layers": {
+    "streams": {
+      "applies": false,
+      "objectIdFieldName": "OBJECTID",
+      "geometryType": "esriGeometryPolygon",
+      "spatialReference": {"wkid": 2285},
+      "fields": [{"name": "OBJECTID", "type": "esriFieldTypeOID"}],
+      "features": []
+    },
+    "wetlands": {
+      "applies": false,
+      "objectIdFieldName": "OBJECTID",
+      "geometryType": "esriGeometryPolygon",
+      "spatialReference": {"wkid": 2285},
+      "fields": [{"name": "OBJECTID", "type": "esriFieldTypeOID"}],
+      "features": []
+    },
+    "flood": {
+      "applies": false,
+      "objectIdFieldName": "OBJECTID",
+      "geometryType": "esriGeometryPolygon",
+      "spatialReference": {"wkid": 2285},
+      "fields": [{"name": "OBJECTID", "type": "esriFieldTypeOID"}],
+      "features": []
+    },
+    "geology_landslide": {
+      "applies": false,
+      "objectIdFieldName": "OBJECTID",
+      "geometryType": "esriGeometryPolygon",
+      "spatialReference": {"wkid": 2285},
+      "fields": [{"name": "OBJECTID", "type": "esriFieldTypeOID"}],
+      "features": []
+    },
+    "geology_ground": {
+      "applies": false,
+      "objectIdFieldName": "OBJECTID",
+      "geometryType": "esriGeometryPolygon",
+      "spatialReference": {"wkid": 2285},
+      "fields": [{"name": "OBJECTID", "type": "esriFieldTypeOID"}],
+      "features": []
+    },
+    "geology_volcanic": {
+      "applies": false,
+      "objectIdFieldName": "OBJECTID",
+      "geometryType": "esriGeometryPolygon",
+      "spatialReference": {"wkid": 2285},
+      "fields": [{"name": "OBJECTID", "type": "esriFieldTypeOID"}],
+      "features": []
+    },
+    "utilities_water": {
+      "applies": false,
+      "objectIdFieldName": "OBJECTID",
+      "geometryType": "esriGeometryPolygon",
+      "spatialReference": {"wkid": 2285},
+      "fields": [{"name": "OBJECTID", "type": "esriFieldTypeOID"}],
+      "features": []
+    },
+    "utilities_sewer": {
+      "applies": false,
+      "objectIdFieldName": "OBJECTID",
+      "geometryType": "esriGeometryPolygon",
+      "spatialReference": {"wkid": 2285},
+      "fields": [{"name": "OBJECTID", "type": "esriFieldTypeOID"}],
+      "features": []
+    },
+    "roads": {
+      "applies": false,
+      "objectIdFieldName": "OBJECTID",
+      "geometryType": "esriGeometryPolyline",
+      "spatialReference": {"wkid": 2285},
+      "fields": [{"name": "OBJECTID", "type": "esriFieldTypeOID"}],
+      "features": []
+    },
+    "shoreline": {
+      "applies": false,
+      "objectIdFieldName": "OBJECTID",
+      "geometryType": "esriGeometryPolygon",
+      "spatialReference": {"wkid": 2285},
+      "fields": [{"name": "OBJECTID", "type": "esriFieldTypeOID"}],
+      "features": []
+    },
+    "default": {
+      "applies": false,
+      "objectIdFieldName": "OBJECTID",
+      "geometryType": "esriGeometryPolygon",
+      "spatialReference": {"wkid": 2285},
+      "fields": [{"name": "OBJECTID", "type": "esriFieldTypeOID"}],
+      "features": []
+    }
+  }
+}
