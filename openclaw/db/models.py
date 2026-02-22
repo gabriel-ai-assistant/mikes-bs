@@ -46,6 +46,39 @@ class UserRoleEnum(enum.Enum):
     viewer = "viewer"
 
 
+class EnrichmentStatusEnum(enum.Enum):
+    pending = "pending"
+    running = "running"
+    success = "success"
+    partial = "partial"
+    failed = "failed"
+
+
+class EnrichmentSourceClassEnum(enum.Enum):
+    public_record = "public_record"
+    commercial_api = "commercial_api"
+    business_filing = "business_filing"
+    osint = "osint"
+
+
+class ContactMethodEnum(enum.Enum):
+    phone = "phone"
+    email = "email"
+    mail = "mail"
+    in_person = "in_person"
+    other = "other"
+
+
+class ContactOutcomeEnum(enum.Enum):
+    no_answer = "no_answer"
+    voicemail = "voicemail"
+    spoke = "spoke"
+    email_sent = "email_sent"
+    letter_sent = "letter_sent"
+    meeting = "meeting"
+    other = "other"
+
+
 class Parcel(Base):
     __tablename__ = "parcels"
     __table_args__ = (UniqueConstraint("parcel_id", "county", name="uq_parcel_county"),)
@@ -133,6 +166,16 @@ class Lead(Base):
     status = Column(String, default=LeadStatusEnum.new.value, nullable=False)
     owner_phone = Column(String)
     owner_email = Column(String)
+    owner_snapshot = Column(JSONB)
+    reason = Column(Text)
+    score_at_promotion = Column(Integer)
+    bundle_snapshot = Column(JSONB)
+    promoted_by = Column(Integer, ForeignKey("users.id"))
+    promoted_at = Column(DateTime)
+    osint_investigation_id = Column(Integer)
+    osint_status = Column(Text)
+    osint_queried_at = Column(DateTime)
+    osint_summary = Column(Text)
     notes = Column(Text)
     contacted_at = Column(DateTime)
     contact_method = Column(String)
@@ -141,6 +184,9 @@ class Lead(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     candidate = relationship("Candidate", back_populates="leads")
+    promoted_by_user = relationship("User", back_populates="promoted_leads")
+    enrichment_results = relationship("EnrichmentResult", back_populates="lead", cascade="all, delete-orphan")
+    contact_log_entries = relationship("LeadContactLog", back_populates="lead", cascade="all, delete-orphan")
 
     @validates("status")
     def validate_status(self, _key, value):
@@ -219,6 +265,8 @@ class User(Base):
     password_hash = Column(String, nullable=False)
     role = Column(String, nullable=False, default=UserRoleEnum.member.value)
     created_at = Column(DateTime, default=datetime.utcnow)
+    promoted_leads = relationship("Lead", back_populates="promoted_by_user")
+    lead_contact_logs = relationship("LeadContactLog", back_populates="user")
 
     @validates("role")
     def validate_role(self, _key, value):
@@ -268,3 +316,42 @@ class FeasibilityResult(Base):
     completed_at = Column(DateTime)
 
     parcel = relationship("Parcel", back_populates="feasibility_results")
+
+
+class EnrichmentResult(Base):
+    __tablename__ = "enrichment_results"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    lead_id = Column(UUID(as_uuid=True), ForeignKey("leads.id"), nullable=False, index=True)
+    provider = Column(String, nullable=False)
+    status = Column(
+        Enum(EnrichmentStatusEnum, name="enrichment_status_enum", create_type=False),
+        nullable=False,
+        default=EnrichmentStatusEnum.pending,
+    )
+    data = Column(JSONB)
+    confidence = Column(Float)
+    source_class = Column(
+        Enum(EnrichmentSourceClassEnum, name="enrichment_source_class_enum", create_type=False),
+        nullable=False,
+    )
+    fetched_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime)
+    error_message = Column(Text)
+
+    lead = relationship("Lead", back_populates="enrichment_results")
+
+
+class LeadContactLog(Base):
+    __tablename__ = "lead_contact_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    lead_id = Column(UUID(as_uuid=True), ForeignKey("leads.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    method = Column(Enum(ContactMethodEnum, name="lead_contact_method_enum", create_type=False), nullable=False)
+    outcome = Column(Enum(ContactOutcomeEnum, name="lead_contact_outcome_enum", create_type=False), nullable=False)
+    notes = Column(Text)
+    contacted_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    lead = relationship("Lead", back_populates="contact_log_entries")
+    user = relationship("User", back_populates="lead_contact_logs")

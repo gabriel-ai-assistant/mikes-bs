@@ -4,13 +4,13 @@
 {% block head %}
 <style>
 .kanban{display:flex;gap:1rem;overflow-x:auto;padding-bottom:1rem}
-.kanban-col{min-width:260px;flex:1;background:#f1f5f9;border-radius:12px;padding:.75rem}
+.kanban-col{min-width:280px;flex:1;background:#f1f5f9;border-radius:12px;padding:.75rem}
 .kanban-col h6{font-weight:700;font-size:.85rem;text-transform:uppercase;color:#6b7280;margin-bottom:.75rem}
-.lead-card{background:#fff;border-radius:8px;padding:.75rem;margin-bottom:.5rem;box-shadow:0 1px 2px rgba(0,0,0,.06);cursor:pointer}
+.lead-card{background:#fff;border-radius:8px;padding:.75rem;margin-bottom:.5rem;box-shadow:0 1px 2px rgba(0,0,0,.06)}
 .lead-card:hover{box-shadow:0 2px 8px rgba(0,0,0,.12)}
 .lead-card .name{font-weight:600;font-size:.95rem}
 .lead-card .addr{font-size:.85rem;color:#6b7280}
-.lead-card .contact{font-size:.8rem;color:#9ca3af;margin-top:.25rem}
+.lead-card .meta{font-size:.78rem;color:#6b7280}
 </style>
 {% endblock %}
 {% block content %}
@@ -19,34 +19,31 @@
 <div class="empty-state"><i class="bi bi-kanban"></i><h4>No leads yet</h4><p>Leads are created from candidates. Run the pipeline first.</p></div>
 {% else %}
 <div class="kanban">
-{% set labels = {'new':'New','researching':'Researching','contacted':'Contacted','negotiating':'Negotiating','closed_won':'Closed Won','closed_lost':'Closed Lost','dead':'Dead'} %}
 {% for status in statuses %}
 <div class="kanban-col">
-  <h6>{{ labels.get(status, status) }} ({{ columns[status]|length }})</h6>
+  <h6>{{ status_labels.get(status, status) }} ({{ columns[status]|length }})</h6>
   {% for lead in columns[status] %}
-  <div class="lead-card" data-bs-toggle="collapse" data-bs-target="#lead-{{ lead.id|string|replace('-','') }}">
-    <div class="d-flex justify-content-between align-items-start">
-      <div class="name">{{ lead.candidate.parcel.owner_name or 'Unknown Owner' }}</div>
-      {% if lead.candidate.score_tier %}
-      <span class="badge badge-{{ lead.candidate.score_tier.value|lower }}">{{ lead.candidate.score_tier.value }}</span>
+  <div class="lead-card">
+    <div class="d-flex justify-content-between align-items-start gap-2">
+      <div>
+        <div class="name">{{ lead.owner_snapshot.name if lead.owner_snapshot and lead.owner_snapshot.name else (lead.candidate.parcel.owner_name if lead.candidate and lead.candidate.parcel else 'Unknown Owner') }}</div>
+        <div class="addr">{{ lead.candidate.parcel.address if lead.candidate and lead.candidate.parcel else 'No address' }}</div>
+      </div>
+      {% if lead.score_at_promotion is not none %}
+      <span class="badge bg-secondary">{{ lead.score_at_promotion }}</span>
       {% endif %}
     </div>
-    <div class="addr">{{ lead.candidate.parcel.address or 'No address' }}</div>
-    <div class="contact">
-      {% if lead.owner_phone %}📞 {{ lead.owner_phone }}{% endif %}
-      {% if lead.owner_email %}✉️ {{ lead.owner_email }}{% endif %}
-      {% if not lead.owner_phone and not lead.owner_email %}No contact info{% endif %}
+
+    <div class="meta mt-2">
+      {% if lead.promoted_at %}Promoted {{ lead.promoted_at.strftime('%Y-%m-%d') }}{% endif %}
+      {% if lead.promoted_by_user %} · by {{ lead.promoted_by_user.username }}{% endif %}
     </div>
-    <div class="collapse mt-2" id="lead-{{ lead.id|string|replace('-','') }}">
-      <hr class="my-2">
-      <p class="mb-1" style="font-size:.85rem"><strong>Notes:</strong> {{ lead.notes or 'None' }}</p>
-      {% if lead.contacted_at %}<p class="mb-1" style="font-size:.85rem"><strong>Last Contact:</strong> {{ lead.contacted_at.strftime('%b %d, %Y') }}</p>{% endif %}
-      {% if lead.outcome %}<p class="mb-1" style="font-size:.85rem"><strong>Outcome:</strong> {{ lead.outcome }}</p>{% endif %}
-      <div class="mt-2">
-        <select class="form-select form-select-sm" onchange="updateStatus('{{ lead.id }}',this.value)">
-          {% for s in statuses %}<option value="{{ s }}"{% if lead.status==s %} selected{% endif %}>{{ labels.get(s, s) }}</option>{% endfor %}
-        </select>
-      </div>
+
+    <div class="mt-2 d-flex gap-2">
+      <a class="btn btn-sm btn-primary" href="{{ base_url }}/leads/{{ lead.id }}">Open</a>
+      <select class="form-select form-select-sm" onchange="updateStatus('{{ lead.id }}',this.value)">
+        {% for s in statuses %}<option value="{{ s }}"{% if lead.status==s %} selected{% endif %}>{{ status_labels.get(s, s) }}</option>{% endfor %}
+      </select>
     </div>
   </div>
   {% endfor %}
@@ -58,6 +55,7 @@
 
 {% block scripts %}
 <script>
+const BASE = "{{ base_url }}";
 function updateStatus(id,status){
   fetch(BASE+'/api/lead/'+id+'/status?status='+status,{method:'POST'}).then(()=>location.reload());
 }

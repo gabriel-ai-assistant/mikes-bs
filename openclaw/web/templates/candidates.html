@@ -181,6 +181,10 @@
           <td data-col="address" class="fw-semibold">
             <button class="btn btn-link p-0 text-start fw-semibold" onclick="openCandidateModal('{{ cid }}', '{{ p.id }}')">{{ p.address or "—" }}</button>
             <div class="small text-muted">{{ p.owner_name or "—" }}</div>
+            <button
+              class="btn btn-sm btn-outline-primary mt-1"
+              onclick='openPromoteLeadModal({{ {"candidate_id": cid, "address": p.address or "", "score": c.score, "bundle": c.bundle_data, "lead_status": row.lead_status}|tojson }})'
+            >Promote to Lead</button>
           </td>
           <td data-col="score">{{ c.score if c.score is not none else "—" }}</td>
           <td data-col="score_tier">
@@ -270,6 +274,34 @@
   </div>
 </div>
 
+<div class="modal fade" id="promoteLeadModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Promote to Lead</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="small text-muted mb-1">Address</div>
+        <div id="promoteAddress" class="fw-semibold mb-2">—</div>
+        <div class="small text-muted mb-1">Current score</div>
+        <div id="promoteScore" class="mb-2">—</div>
+        <div class="small text-muted mb-1">Bundle snapshot</div>
+        <pre id="promoteBundle" class="small bg-light border rounded p-2 mb-2" style="max-height:160px;overflow:auto">None</pre>
+        <div id="promoteDuplicateHint" class="alert alert-warning small d-none py-2"></div>
+        <label class="form-label">Reason</label>
+        <input id="promoteReason" class="form-control form-control-sm mb-2" placeholder="Why promote this candidate?" />
+        <label class="form-label">Notes</label>
+        <textarea id="promoteNotes" class="form-control form-control-sm" rows="3"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="submitPromoteLead()">Promote</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -300,6 +332,8 @@ const COLUMN_STORAGE_KEY = "column_config";
 let _miniMap = null;
 const modal = new bootstrap.Modal(document.getElementById('detailModal'));
 const columnModal = new bootstrap.Modal(document.getElementById('columnChooserModal'));
+const promoteLeadModal = new bootstrap.Modal(document.getElementById('promoteLeadModal'));
+let pendingPromotePayload = null;
 
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -637,6 +671,52 @@ async function openCandidateModal(id, parcelId='') {
     </div>
   `;
 
+}
+
+function openPromoteLeadModal(payload) {
+  pendingPromotePayload = payload || null;
+  if (!pendingPromotePayload || !pendingPromotePayload.candidate_id) return;
+  document.getElementById('promoteAddress').textContent = pendingPromotePayload.address || '—';
+  document.getElementById('promoteScore').textContent = pendingPromotePayload.score != null ? String(pendingPromotePayload.score) : '—';
+  document.getElementById('promoteBundle').textContent = pendingPromotePayload.bundle ? JSON.stringify(pendingPromotePayload.bundle, null, 2) : 'None';
+  document.getElementById('promoteReason').value = '';
+  document.getElementById('promoteNotes').value = '';
+
+  const hint = document.getElementById('promoteDuplicateHint');
+  if (pendingPromotePayload.lead_status && !['dead', 'closed_lost'].includes(pendingPromotePayload.lead_status)) {
+    hint.classList.remove('d-none');
+    hint.textContent = `Existing lead status: ${pendingPromotePayload.lead_status}. Promotion will fail unless that lead is dead or closed_lost.`;
+  } else {
+    hint.classList.add('d-none');
+    hint.textContent = '';
+  }
+  promoteLeadModal.show();
+}
+
+async function submitPromoteLead() {
+  if (!pendingPromotePayload || !pendingPromotePayload.candidate_id) return;
+  const reason = document.getElementById('promoteReason').value.trim();
+  const notes = document.getElementById('promoteNotes').value.trim();
+  const resp = await fetch(`${BASE}/api/leads`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      candidate_id: pendingPromotePayload.candidate_id,
+      reason,
+      notes,
+    }),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (resp.status === 409 && data.lead_id) {
+    window.location.href = `${BASE}/leads/${data.lead_id}`;
+    return;
+  }
+  if (!resp.ok || !data.lead_id) {
+    alert(data.error || 'Failed to promote lead');
+    return;
+  }
+  promoteLeadModal.hide();
+  window.location.href = `${BASE}/leads/${data.lead_id}`;
 }
 
 async function addNote(id) {

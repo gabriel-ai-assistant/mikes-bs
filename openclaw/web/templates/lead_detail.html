@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block title %}Lead {{ lead.id }} — Mike's BS{% endblock %}
+{% block content %}
+<style>
+.stepper{display:flex;gap:.4rem;flex-wrap:wrap}
+.step{padding:.4rem .6rem;border-radius:999px;background:#e5e7eb;color:#374151;font-size:.8rem}
+.step.active{background:#0d6efd;color:#fff}
+.conf-track{background:#e9ecef;border-radius:8px;height:10px;overflow:hidden}
+.conf-fill{height:10px}
+</style>
+
+<div class="d-flex justify-content-between align-items-start gap-2 mb-3 flex-wrap">
+  <div>
+    <a href="{{ base_url }}/leads" class="btn btn-sm btn-outline-secondary mb-2">← Back to Leads</a>
+    <h4 class="mb-1">{{ lead.candidate.parcel.address if lead.candidate and lead.candidate.parcel else 'No address' }}</h4>
+    <div class="text-muted small">
+      Score at promotion: <strong>{{ lead.score_at_promotion if lead.score_at_promotion is not none else '—' }}</strong>
+      · Status: <span class="badge bg-primary">{{ status_labels.get(lead.status, lead.status) }}</span>
+      {% if lead.promoted_at %} · Promoted {{ lead.promoted_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}
+      {% if lead.promoted_by_user %} · by {{ lead.promoted_by_user.username }}{% endif %}
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <button class="btn btn-sm btn-outline-primary" onclick="triggerEnrich()">Re-enrich</button>
+    <button class="btn btn-sm btn-outline-danger" onclick="deleteEnrichment()">Delete Enrichment Data</button>
+  </div>
+</div>
+
+<div class="mb-3">
+  <div class="stepper">
+    {% for s in statuses %}
+    <span class="step {% if s == lead.status %}active{% endif %}">{{ status_labels.get(s, s) }}</span>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-12 col-lg-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-transparent fw-bold">Owner Identity</div>
+      <div class="card-body">
+        <div><strong>Name:</strong> {{ lead.owner_snapshot.name if lead.owner_snapshot and lead.owner_snapshot.name else (lead.candidate.parcel.owner_name if lead.candidate and lead.candidate.parcel else '—') }}</div>
+        <div class="mt-1"><strong>Mailing Address:</strong> {{ lead.owner_snapshot.mailing_address if lead.owner_snapshot and lead.owner_snapshot.mailing_address else (lead.candidate.parcel.owner_address if lead.candidate and lead.candidate.parcel else '—') }}</div>
+        {% if lead.reason %}<div class="mt-2"><strong>Promotion Reason:</strong> {{ lead.reason }}</div>{% endif %}
+        {% if lead.bundle_snapshot %}
+        <details class="mt-2">
+          <summary>Bundle snapshot</summary>
+          <pre class="small mt-2 mb-0">{{ lead.bundle_snapshot | tojson(indent=2) }}</pre>
+        </details>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-lg-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-transparent fw-bold">OSINT</div>
+      <div class="card-body">
+        {% set os = lead.osint_status or 'pending' %}
+        <div>
+          Status:
+          {% if os == 'complete' %}<span class="badge bg-success">Complete</span>
+          {% elif os == 'partial' %}<span class="badge bg-warning text-dark">Partial</span>
+          {% elif os == 'failed' %}<span class="badge bg-danger">Failed</span>
+          {% else %}<span class="badge bg-secondary">Pending</span>{% endif %}
+        </div>
+        <div class="mt-2">{{ lead.osint_summary or 'No OSINT summary yet.' }}</div>
+        <div class="mt-2 d-flex gap-2">
+          <button class="btn btn-sm btn-outline-primary" onclick="triggerEnrich('osint')">Run OSINT</button>
+          {% if osint_ui_link %}
+          <a class="btn btn-sm btn-outline-secondary" href="{{ osint_ui_link }}" target="_blank" rel="noopener noreferrer">Open OSINT UI</a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-transparent fw-bold">Enrichment Results</div>
+      <div class="card-body">
+        {% if not grouped_enrichment %}
+        <div class="text-muted">No providers configured.</div>
+        {% else %}
+        {% for provider, items in grouped_enrichment.items() %}
+        <div class="border rounded p-2 mb-2">
+          <div class="d-flex justify-content-between align-items-center">
+            <div class="fw-semibold">{{ provider }}</div>
+            <button class="btn btn-sm btn-outline-primary" onclick="triggerEnrich('{{ provider }}')">Re-enrich {{ provider }}</button>
+          </div>
+          {% for item in items %}
+          <div class="mt-2 p-2 bg-light rounded">
+            <div class="small text-muted">{{ item.fetched_at.strftime('%Y-%m-%d %H:%M:%S') if item.fetched_at else '' }}</div>
+            <div class="small">Status: <span class="badge bg-secondary">{{ item.status.value if item.status and item.status.value else item.status }}</span> · Source: {{ item.source_class.value if item.source_class and item.source_class.value else item.source_class }}</div>
+            {% set conf = item.confidence if item.confidence is not none else 0 %}
+            <div class="small mt-1">Confidence {{ '%.0f'|format(conf * 100) }}%</div>
+            <div class="conf-track"><div class="conf-fill {% if conf >= 0.75 %}bg-success{% elif conf >= 0.45 %}bg-warning{% else %}bg-danger{% endif %}" style="width: {{ (conf * 100)|round(0, 'floor') }}%"></div></div>
+            {% if item.error_message %}<div class="small text-danger mt-1">{{ item.error_message }}</div>{% endif %}
+            <details class="mt-1"><summary class="small">Raw data</summary><pre class="small mb-0 mt-1">{{ item.data | tojson(indent=2) }}</pre></details>
+          </div>
+          {% endfor %}
+        </div>
+        {% endfor %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-transparent fw-bold">Contact Log</div>
+      <div class="card-body">
+        <div class="row g-2 align-items-end mb-3">
+          <div class="col-12 col-md-2">
+            <label class="form-label small mb-1">Method</label>
+            <select id="contactMethod" class="form-select form-select-sm">
+              {% for value in method_values %}<option value="{{ value }}">{{ value }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-3">
+            <label class="form-label small mb-1">Outcome</label>
+            <select id="contactOutcome" class="form-select form-select-sm">
+              {% for value in outcome_values %}<option value="{{ value }}">{{ value }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-3">
+            <label class="form-label small mb-1">Contacted At</label>
+            <input id="contactedAt" type="datetime-local" class="form-control form-control-sm">
+          </div>
+          <div class="col-12 col-md-4">
+            <label class="form-label small mb-1">Notes</label>
+            <input id="contactNotes" type="text" class="form-control form-control-sm" placeholder="Call notes">
+          </div>
+          <div class="col-12">
+            <button class="btn btn-sm btn-primary" onclick="addContactLog()">Add contact entry</button>
+          </div>
+        </div>
+
+        <div id="contactList">
+          {% if not contact_entries %}
+          <div class="text-muted small">No contact log entries yet.</div>
+          {% endif %}
+          {% for item in contact_entries %}
+          <div class="border rounded p-2 mb-2">
+            <div><strong>{{ item.method.value if item.method and item.method.value else item.method }}</strong> · {{ item.outcome.value if item.outcome and item.outcome.value else item.outcome }}</div>
+            <div class="small text-muted">{{ item.contacted_at.strftime('%Y-%m-%d %H:%M') if item.contacted_at else '' }}{% if item.user %} · {{ item.user.username }}{% endif %}</div>
+            {% if item.notes %}<div class="small mt-1">{{ item.notes }}</div>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const BASE = "{{ base_url }}";
+const LEAD_ID = "{{ lead.id }}";
+
+async function triggerEnrich(provider='') {
+  const payload = provider ? {provider} : {};
+  const res = await fetch(`${BASE}/api/leads/${LEAD_ID}/enrich`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    alert('Failed to queue enrichment');
+    return;
+  }
+  alert('Enrichment queued. Refresh shortly.');
+}
+
+async function deleteEnrichment() {
+  if (!confirm('Delete all enrichment data for this lead?')) return;
+  const res = await fetch(`${BASE}/api/leads/${LEAD_ID}/enrichment`, {method:'DELETE'});
+  if (!res.ok) {
+    alert('Delete failed');
+    return;
+  }
+  location.reload();
+}
+
+async function addContactLog() {
+  const method = document.getElementById('contactMethod').value;
+  const outcome = document.getElementById('contactOutcome').value;
+  const contactedAt = document.getElementById('contactedAt').value;
+  const notes = document.getElementById('contactNotes').value;
+
+  const res = await fetch(`${BASE}/api/leads/${LEAD_ID}/contact-log`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({method, outcome, contacted_at: contactedAt || null, notes}),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    alert(data.error || 'Failed to add contact log');
+    return;
+  }
+  location.reload();
+}
+</script>
+{% endblock %}

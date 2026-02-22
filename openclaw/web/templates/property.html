@@ -49,6 +49,12 @@
       </div>
       <div class="col-md-4 text-md-end mt-2 mt-md-0">
         <div class="d-flex gap-2 justify-content-md-end flex-wrap">
+          {% if c %}
+          <button
+            class="btn btn-sm btn-primary"
+            onclick='openPromoteLeadModal({{ {"candidate_id": c.id|string, "address": p.address or "", "score": c.score, "bundle": c.bundle_data}|tojson }})'
+          >Promote to Lead</button>
+          {% endif %}
           {% if lat %}
           <a href="https://www.google.com/maps/?q={{ lat }},{{ lng }}" target="_blank" class="btn btn-sm btn-outline-secondary">📍 Google Maps</a>
           <a href="https://earth.google.com/web/@{{ lat }},{{ lng }},500a,500d,35y,0h,0t,0r" target="_blank" class="btn btn-sm btn-outline-secondary">🌍 Google Earth</a>
@@ -421,6 +427,33 @@
 </div>
 {% endif %}
 
+<div class="modal fade" id="promoteLeadModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Promote to Lead</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="small text-muted mb-1">Address</div>
+        <div id="promoteAddress" class="fw-semibold mb-2">—</div>
+        <div class="small text-muted mb-1">Current score</div>
+        <div id="promoteScore" class="mb-2">—</div>
+        <div class="small text-muted mb-1">Bundle snapshot</div>
+        <pre id="promoteBundle" class="small bg-light border rounded p-2 mb-2" style="max-height:160px;overflow:auto">None</pre>
+        <label class="form-label">Reason</label>
+        <input id="promoteReason" class="form-control form-control-sm mb-2" placeholder="Why promote this candidate?" />
+        <label class="form-label">Notes</label>
+        <textarea id="promoteNotes" class="form-control form-control-sm" rows="3"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="submitPromoteLead()">Promote</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -438,6 +471,8 @@ const CANDIDATE_ID = "{{ c.id }}";
 {% else %}
 const CANDIDATE_ID = null;
 {% endif %}
+const promoteLeadModal = new bootstrap.Modal(document.getElementById('promoteLeadModal'));
+let pendingPromotePayload = null;
 
 {% if lat %}
 // Init satellite map
@@ -530,6 +565,43 @@ async function runFeasibility(parcelId) {
     return;
   }
   alert('Feasibility job started. Refresh in a moment to see status.');
+}
+
+function openPromoteLeadModal(payload) {
+  pendingPromotePayload = payload || null;
+  if (!pendingPromotePayload || !pendingPromotePayload.candidate_id) return;
+  document.getElementById('promoteAddress').textContent = pendingPromotePayload.address || '—';
+  document.getElementById('promoteScore').textContent = pendingPromotePayload.score != null ? String(pendingPromotePayload.score) : '—';
+  document.getElementById('promoteBundle').textContent = pendingPromotePayload.bundle ? JSON.stringify(pendingPromotePayload.bundle, null, 2) : 'None';
+  document.getElementById('promoteReason').value = '';
+  document.getElementById('promoteNotes').value = '';
+  promoteLeadModal.show();
+}
+
+async function submitPromoteLead() {
+  if (!pendingPromotePayload || !pendingPromotePayload.candidate_id) return;
+  const reason = document.getElementById('promoteReason').value.trim();
+  const notes = document.getElementById('promoteNotes').value.trim();
+  const resp = await fetch(`${BASE}/api/leads`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      candidate_id: pendingPromotePayload.candidate_id,
+      reason,
+      notes,
+    }),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (resp.status === 409 && data.lead_id) {
+    window.location.href = `${BASE}/leads/${data.lead_id}`;
+    return;
+  }
+  if (!resp.ok || !data.lead_id) {
+    alert(data.error || 'Failed to promote lead');
+    return;
+  }
+  promoteLeadModal.hide();
+  window.location.href = `${BASE}/leads/${data.lead_id}`;
 }
 </script>
 {% endblock %}

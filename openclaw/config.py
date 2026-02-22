@@ -6,6 +6,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
 class Settings:
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+psycopg2://openclaw:password@postgis:5432/openclaw")
 
@@ -24,6 +31,14 @@ class Settings:
 
     LOB_API_KEY: str = os.getenv("LOB_API_KEY", "")
     SKIP_TRACE_API_KEY: str = os.getenv("SKIP_TRACE_API_KEY", "")
+    SKIP_TRACE_ENABLED: bool = _env_bool("SKIP_TRACE_ENABLED", False)
+    SKIP_TRACE_RATE_LIMIT_PER_MIN: int = int(os.getenv("SKIP_TRACE_RATE_LIMIT_PER_MIN", "10"))
+    SKIP_TRACE_MAX_RETRIES: int = int(os.getenv("SKIP_TRACE_MAX_RETRIES", "3"))
+    BUSINESS_FILINGS_ENABLED: bool = _env_bool("BUSINESS_FILINGS_ENABLED", False)
+    ENRICHMENT_RETENTION_DAYS: int = int(os.getenv("ENRICHMENT_RETENTION_DAYS", "365"))
+    OSINT_BASE_URL: str = os.getenv("OSINT_BASE_URL", "http://localhost:8450")
+    OSINT_UI_URL: str = os.getenv("OSINT_UI_URL", "")
+    OSINT_ENABLED: bool = _env_bool("OSINT_ENABLED", True)
 
 
 settings = Settings()

@@ -1,36 +1,37 @@
-"""Skip-trace stub — BatchSkipTracing API integration placeholder.
+"""Skip-trace enrichment provider stub."""
 
-Wire this to the real API when SKIP_TRACE_API_KEY is configured.
-Interface is stable — callers won't need changes.
-"""
+from __future__ import annotations
 
-import logging
 from openclaw.config import settings
-
-logger = logging.getLogger(__name__)
-
-
-def skip_trace(parcel_id: str) -> dict:
-    """Look up owner contact info for a parcel.
-
-    Args:
-        parcel_id: UUID of the parcel record.
-
-    Returns:
-        dict with keys: phone (str|None), email (str|None)
-    """
-    if not settings.SKIP_TRACE_API_KEY:
-        logger.debug(f"Skip-trace stub called for {parcel_id} — no API key configured")
-        return {"phone": None, "email": None}
-
-    # TODO: Implement real BatchSkipTracing API call
-    # POST https://api.batchskiptracing.com/v1/lookup
-    # Headers: Authorization: Bearer {SKIP_TRACE_API_KEY}
-    # Body: { "parcel_id": parcel_id }
-    # Response: { "phone": "...", "email": "..." }
-    raise NotImplementedError("BatchSkipTracing API integration not yet implemented")
+from openclaw.db.models import EnrichmentSourceClassEnum, Lead
+from openclaw.enrich.base import EnrichmentProvider
 
 
-if __name__ == "__main__":
-    result = skip_trace("test-parcel-id")
-    print(result)
+class SkipTraceProvider(EnrichmentProvider):
+    name = "skip_trace"
+    enabled = bool(settings.SKIP_TRACE_ENABLED)
+    rate_limit_per_min = max(1, int(settings.SKIP_TRACE_RATE_LIMIT_PER_MIN))
+    source_class = EnrichmentSourceClassEnum.commercial_api
+
+    def is_configured(self) -> bool:
+        return bool(self.enabled and settings.SKIP_TRACE_API_KEY)
+
+    async def enrich(self, lead: Lead) -> dict:
+        # Placeholder while external API integration is pending.
+        data = {
+            "phones": [lead.owner_phone] if lead.owner_phone else [],
+            "emails": [lead.owner_email] if lead.owner_email else [],
+            "source": "batch_skip_tracing_stub",
+        }
+        if data["phones"] or data["emails"]:
+            status = "partial"
+            confidence = 0.4
+        else:
+            status = "failed"
+            confidence = 0.0
+        return {
+            "status": status,
+            "data": data,
+            "confidence": confidence,
+            "error_message": "Skip trace API integration pending" if status == "failed" else "Stub response",
+        }

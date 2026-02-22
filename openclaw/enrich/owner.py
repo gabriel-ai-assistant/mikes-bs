@@ -1,52 +1,46 @@
-"""Owner enrichment — flags entity owners for manual skip-trace."""
+"""Public-record owner enrichment provider."""
 
-import logging
+from __future__ import annotations
 
-from openclaw.db.models import Lead, LeadStatusEnum
-from openclaw.db.session import SessionLocal
+from openclaw.db.models import EnrichmentSourceClassEnum, Lead
+from openclaw.enrich.base import EnrichmentProvider
 
-logger = logging.getLogger(__name__)
-
-ENTITY_KEYWORDS = ("LLC", "INC", "TRUST", "CORP", "LP", "LTD")
+ENTITY_KEYWORDS = ("LLC", "INC", "TRUST", "CORP", "LP", "LTD", "ESTATE", "PARTNERSHIP")
 
 
 def is_entity(owner_name: str | None) -> bool:
-    """Check if owner name looks like a business entity."""
     if not owner_name:
         return False
     upper = owner_name.upper()
     return any(kw in upper for kw in ENTITY_KEYWORDS)
 
 
-def enrich_candidates(candidates: list[dict]) -> int:
-    """Create lead records for new candidates, flagging entities.
+class PublicRecordProvider(EnrichmentProvider):
+    name = "public_record"
+    enabled = True
+    rate_limit_per_min = 120
+    source_class = EnrichmentSourceClassEnum.public_record
 
-    Each candidate dict must have: candidate_id, parcel_id, owner_name
-    Returns count of leads created.
-    """
-    session = SessionLocal()
-    created = 0
-    try:
-        for c in candidates:
-            entity = is_entity(c.get("owner_name"))
-            lead = Lead(
-                candidate_id=c["candidate_id"],
-                status=LeadStatusEnum.new,
-                notes="Entity owner — manual skip-trace required" if entity else None,
-            )
-            session.add(lead)
-            created += 1
+    async def enrich(self, lead: Lead) -> dict:
+        owner_snapshot = lead.owner_snapshot or {}
+        owner_name = owner_snapshot.get("name")
+        mailing_address = owner_snapshot.get("mailing_address")
 
-        session.commit()
-        logger.info(f"Created {created} lead records")
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
+        if (not owner_name or not mailing_address) and lead.candidate and lead.candidate.parcel:
+            owner_name = owner_name or lead.candidate.parcel.owner_name
+            mailing_address = mailing_address or lead.candidate.parcel.owner_address
 
-    return created
-
-
-if __name__ == "__main__":
-    print("Owner enrichment — run via main orchestrator.")
+        data = {
+            "owner_name": owner_name,
+            "mailing_address": mailing_address,
+            "is_entity": is_entity(owner_name),
+            "source": "county_record",
+        }
+        status = "success" if owner_name or mailing_address else "partial"
+        confidence = 0.95 if status == "success" else 0.5
+        return {
+            "status": status,
+            "data": data,
+            "confidence": confidence,
+            "error_message": None,
+        }
