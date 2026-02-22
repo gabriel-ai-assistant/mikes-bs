@@ -103,7 +103,7 @@
       <tbody>
         {% for c in candidates %}
         {% set p = c.parcel %}
-        <tr data-candidate-id='{{ c.id }}'>
+        <tr data-candidate-id='{{ c.id }}' data-parcel-id='{{ p.id }}' style="cursor:pointer" onclick="openCandidateModal('{{ c.id }}', '{{ p.id }}')" title="Click to view details">
           <td>
             {% if c.score_tier and c.score_tier.value == 'A' %}
               <span class="badge bg-success fs-6">A</span>
@@ -143,7 +143,7 @@
           <td>
             <div class="d-flex gap-1">
               <button class="btn btn-sm btn-outline-primary py-0"
-                      onclick="openCandidateModal('{{ c.id }}', '{{ p.id }}')" title="Details">Details</button>
+                      onclick="event.stopPropagation(); openCandidateModal('{{ c.id }}', '{{ p.id }}')" title="Details">Details</button>
             </div>
           </td>
         </tr>
