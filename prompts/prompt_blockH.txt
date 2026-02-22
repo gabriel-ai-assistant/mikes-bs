@@ -1,0 +1,53 @@
+You are implementing Block H (OSINT Owner Investigation Integration) for the Mike's Building System app.
+Full spec: /home/gabriel/mikes-bs/TASK.md — read "Feature Block H" completely.
+
+BOUNDARY CONTRACT: OpenClaw is a CONSUMER of OSINT platform only.
+- OSINT platform runs at http://localhost:8450/api on this machine
+- Verify: curl http://localhost:8450/api/health — should return {"status":"ok"}
+- Do NOT modify osint-platform/ codebase
+- Do NOT read osint-platform/data/investigations.db directly
+- Only call HTTP API, store investigation_id as opaque reference
+
+CREATE: openclaw/enrich/osint_bridge.py
+Implement OsintProvider(EnrichmentProvider) with:
+- OSINT_BASE_URL env var (default http://localhost:8450/api)
+- OSINT_TIMEOUT_SECONDS env var (default 90)
+- create_investigation(owner_name, parcel_id, score_tier, address, email, phone) -> dict
+- check_health() -> bool
+- is_entity(owner_name) -> bool (detects LLC/INC/CORP/TRUST/LTD/LP/PARTNERSHIP/ESTATE/ET AL)
+- _build_summary(results) -> str (one-line from results dict)
+- _fail_result(reason) -> dict
+- POST payload to /api/investigations: name, subject_name, notes, address, email, phone, company (if entity)
+- Returns: {investigation_id, status (complete/partial/failed), summary, results}
+
+TRIGGER POINTS:
+1. On lead promotion (Block E): BackgroundTasks call to create_investigation(), update lead osint_* columns. Non-blocking — lead creation succeeds even if OSINT fails.
+2. Nightly APScheduler batch: check_health() first, skip if down. Process leads where osint_status IS NULL, order by score DESC, max OSINT_BATCH_LIMIT (20) sequential calls. OSINT_BATCH_ENABLED env var.
+3. Manual: POST /api/leads/{id}/osint → run investigation, update lead
+
+OWNER DEDUP: Before creating investigation, check if another lead with same owner_name_canonical already has osint_investigation_id. If yes, reuse it (copy investigation_id + summary + set status=complete). If no, create new.
+
+DEGRADATION:
+- Platform down: check_health() false → skip batch, log warning, lead pipeline unaffected
+- Timeout: osint_status=failed, osint_summary=Timeout, show retry button in UI
+- Partial results: osint_status=partial
+- OSINT_ENABLED=false: hide OSINT section in UI, skip all calls
+
+TESTS (use unittest.mock to mock httpx):
+- is_entity() for LLC, INC, CORP, individual names
+- _build_summary() with various result dicts
+- Owner dedup: mock two leads with same owner → second reuses investigation_id
+- Mock timeout → osint_status=failed
+- Mock health check down → batch skipped
+
+STEPS:
+1. cat openclaw/enrich/base.py (EnrichmentProvider ABC)
+2. Create openclaw/enrich/osint_bridge.py
+3. Wire OsintProvider into enrichment pipeline
+4. Add POST /api/leads/{id}/osint + GET /api/leads/{id}/osint endpoints
+5. Add nightly APScheduler batch job
+6. docker compose restart web
+7. docker compose exec web python -m pytest tests/ -x -q 2>&1 | tail -20
+8. git add -A && git commit -m "[openclaw] Block-H: OSINT bridge consumer + batch backfill + owner dedup"
+9. git push origin main
+10. echo "BLOCK_H_COMPLETE $(date -Iseconds)" >> /tmp/openclaw_progress.log

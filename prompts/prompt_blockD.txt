@@ -1,0 +1,32 @@
+You are implementing Block D (Learning Module Audit + Improvements) for the Mike's Building System app.
+Full spec: /home/gabriel/mikes-bs/TASK.md — read "Feature Block D" completely.
+
+D1 AUDIT (do first, write report, then proceed to D2):
+- Read openclaw/learning/analyzer.py completely
+- Read openclaw/analysis/rule_engine.py
+- Read openclaw/analysis/tagger.py and edge_config.py
+- Run: docker compose exec postgis psql -U openclaw -c "SELECT score_tier, COUNT(*) FROM candidates GROUP BY score_tier;"
+- Run: docker compose exec postgis psql -U openclaw -c "SELECT MIN(score), MAX(score), ROUND(AVG(score),1), ROUND(STDDEV(score),1) FROM candidates;"
+- Run: docker compose exec postgis psql -U openclaw -c "SELECT COUNT(*) FROM candidate_feedback;"
+- Run: docker compose exec postgis psql -U openclaw -c "SELECT status, COUNT(*) FROM learning_proposals GROUP BY status;"
+- Identify: dead code, non-normalized inputs, corrupted scores, conflicting rules
+- Write audit report to /home/gabriel/mikes-bs/LEARNING_AUDIT.md
+- Evaluate: if no critical blockers proceed to D2. Critical = scoring is fundamentally broken or data is corrupt beyond repair.
+
+D2 IMPROVEMENTS:
+- Normalize scoring inputs to 0.0-1.0 range in rule_engine.py before weighting
+- Make base weights configurable: SPLIT_WEIGHT (default 40), VALUE_WEIGHT (25), OWNER_WEIGHT (15) via env vars
+- Bound learned rule adjustments: max delta ±LEARNING_WEIGHT_MAX_DELTA (default 15) 
+- GET /api/candidate/{id}/score-explanation endpoint returning components breakdown
+- Fix corrupted scores from old thumbs-up override (re-score through pipeline)
+- Add ranking determinism tests (same inputs = same output)
+- Add weight decay on learned rules: configurable LEARNING_WEIGHT_DECAY_HALFLIFE_DAYS (default 30)
+
+STEPS:
+1. Complete D1 audit → write LEARNING_AUDIT.md
+2. Implement D2
+3. docker compose restart web
+4. docker compose exec web python -m pytest tests/ -x -q 2>&1 | tail -20
+5. git add -A && git commit -m "[openclaw] Block-D: learning audit + scoring normalization + score explanation"
+6. git push origin main
+7. echo "BLOCK_D_COMPLETE $(date -Iseconds)" >> /tmp/openclaw_progress.log

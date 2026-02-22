@@ -1,0 +1,36 @@
+You are implementing Block C (Candidates List UX Overhaul) for the Mike's Building System app.
+Full spec: /home/gabriel/mikes-bs/TASK.md — read "Feature Block C" completely.
+
+COVERS 3 sub-blocks:
+
+C1) Fix Voting:
+- Remove score override from POST /api/candidate/{id}/feedback (the max(90, score+40) hack)
+- Votes stored in candidate_feedback only — no direct score mutation
+- Add EDGE_USER_UPVOTE tag in tagger.py: fires when net votes >= VOTE_NET_THRESHOLD (env var, default 1)
+- Mutual exclusivity: one active vote per user per candidate, toggle removes it
+- UI: thumbs up/down icons in candidate rows, optimistic update, 44px touch targets
+
+C2) Column Chooser:
+- COLUMN_REGISTRY JS object in candidates.html (see TASK.md for full registry with 13 columns)
+- Gear icon → dropdown panel with checkboxes
+- "Reset to defaults" button
+- Mobile: full-screen modal
+- Persist to localStorage: key = column_config (add user_id suffix once auth is wired)
+
+C3) Unified Filter Bar:
+- Replace current tier/tag/use_type filters with unified model: q, tiers, tags_any, tags_none, use_types, score_min, score_max, vote, lead_status, has_bundle, osint_status, sort, page, limit
+- Backend: update GET /api/candidates to accept all params, backwards compat with old params
+- Text search: ILIKE on display_text column (Phase 1 only — see FIX-I, no pg_trgm yet)
+- Frontend: chip-based filter bar, URL query string serialization, "Clear all" button, mobile collapsible drawer
+
+STEPS:
+1. Read openclaw/web/routers/candidates.py and templates/candidates.html
+2. Read openclaw/analysis/tagger.py and edge_config.py
+3. Implement C1 (voting fix + EDGE_USER_UPVOTE tag)
+4. Implement C2 (column chooser JS + gear icon)
+5. Implement C3 (unified filter bar backend + frontend)
+6. docker compose restart web
+7. docker compose exec web python -m pytest tests/ -x -q 2>&1 | tail -20
+8. git add -A && git commit -m "[openclaw] Block-C: voting fix + column chooser + unified filter bar"
+9. git push origin main
+10. echo "BLOCK_C_COMPLETE $(date -Iseconds)" >> /tmp/openclaw_progress.log

@@ -1,0 +1,23 @@
+You are implementing Block E (Lead System Extension + Owner Enrichment) for the Mike's Building System app.
+Full spec: /home/gabriel/mikes-bs/TASK.md — read "Feature Block E" completely.
+
+E1) Extend Lead model with Alembic migration: add columns: owner_snapshot JSONB, reason TEXT, score_at_promotion INT, bundle_snapshot JSONB, promoted_by INT FK users, promoted_at TIMESTAMP, osint_investigation_id INT nullable, osint_status TEXT nullable, osint_queried_at TIMESTAMP nullable, osint_summary TEXT nullable
+E2) Lead promotion flow: "Promote to Lead" button on property.html + candidates list rows, confirmation modal (vanilla JS) showing address/score/bundle, no duplicate leads unless previous is dead/closed_lost, POST /api/leads endpoint snapshots score+owner+bundle
+E3) EnrichmentProvider ABC: openclaw/enrich/base.py with name, enabled, rate_limit_per_min, enrich(), is_configured(). enrichment_results table migration + ORM model EnrichmentResult
+E4) Enrichment pipeline: BackgroundTasks on lead promotion, rate-limited, max SKIP_TRACE_MAX_RETRIES (3) retries with exponential backoff, log every call
+E5) Lead detail UI (lead_detail.html or extend leads.html): header with status badge, owner identity, enrichment results grouped by provider with confidence bar, OSINT section (status badge + summary + link to OSINT UI), contact log with inline form, status stepper
+E6) lead_contact_log table: lead_id, user_id, method ENUM, outcome ENUM, notes, contacted_at. Migration + ORM.
+E7) Compliance: audit log all enrichment calls, DELETE /api/leads/{id}/enrichment endpoint, ENRICHMENT_RETENTION_DAYS env var (default 365)
+
+OSINT UI link: make configurable via OSINT_UI_URL env var. Default http://localhost:8450 (server-side API). For display links in UI use OSINT_UI_URL default empty string (hide link if not configured).
+
+STEPS:
+1. Read openclaw/db/models.py for Lead model
+2. Read existing leads router if it exists
+3. Implement E1-E7 in order
+4. docker compose exec web alembic upgrade head
+5. docker compose restart web
+6. docker compose exec web python -m pytest tests/ -x -q 2>&1 | tail -20
+7. git add -A && git commit -m "[openclaw] Block-E: lead extension + enrichment provider abstraction + lead detail UI"
+8. git push origin main
+9. echo "BLOCK_E_COMPLETE $(date -Iseconds)" >> /tmp/openclaw_progress.log

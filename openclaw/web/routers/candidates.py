@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from urllib.parse import quote_plus
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -391,7 +391,7 @@ def property_detail(parcel_id: str, request: Request, session: Session = Depends
     lat = float(coords.lat) if coords and coords.lat else None
     lng = float(coords.lng) if coords and coords.lng else None
 
-    encoded_address = quote_plus((p.address or "").strip())
+    encoded_address = quote((p.address or "").strip(), safe="")
     external_links = {
         "nwmls": "https://www.nwmls.com/",
         "zillow": f"https://www.zillow.com/homes/{encoded_address}_rb/" if encoded_address else "https://www.zillow.com/",

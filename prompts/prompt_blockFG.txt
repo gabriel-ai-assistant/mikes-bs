@@ -1,0 +1,23 @@
+You are implementing Blocks F and G for the Mike's Building System app.
+Full spec: /home/gabriel/mikes-bs/TASK.md — read "Feature Block F" and "Feature Block G".
+
+BLOCK F — Bulk Operations + Export:
+F1) Bulk selection in candidates list: checkbox column, select all on page, select all matching filter. Bulk action toolbar (show when >=1 selected): bulk vote (up/down/clear), bulk tag (add/remove), bulk promote to lead (shared reason prompt). Optimistic UI with rollback on failure.
+F2) CSV export: GET /api/candidates/export?format=csv (respects current filters+sort), GET /api/leads/export?format=csv. Columns match user's column config. StreamingResponse for >1000 rows. PII warning dialog when exporting leads with enrichment data. EXPORT_MAX_ROWS env var (default 10000).
+
+BLOCK G — Reminders + Map Status Overlay:
+G1) reminders table migration: id, lead_id FK, user_id FK, remind_at TIMESTAMP, message TEXT, status ENUM(pending/sent/dismissed), created_at. "Set reminder" button on lead detail page, datetime-local picker + optional note. In-app: poll /api/reminders/pending on page load (no websockets). Overdue reminders in red. APScheduler job every REMINDER_CHECK_INTERVAL_MIN (5) minutes, sends email if SMTP configured, updates status to sent.
+G2) Map pins by lead status: extend GET /api/map/points to include lead_status and osint_status in GeoJSON properties (LEFT JOIN leads on candidate_id). Color-code pins: no lead=gray, new=blue, researching=yellow, contacted=orange, negotiating=purple, closed_won=green, closed_lost/dead=red. Filter checkboxes in map legend. Mobile: collapsible legend, tap popup shows status.
+
+STEPS:
+1. Read openclaw/web/routers/ and templates for context
+2. Implement F1 (bulk selection + actions)
+3. Implement F2 (CSV export endpoints)
+4. Implement G1 (reminders table, UI, APScheduler job)
+5. Implement G2 (map pin coloring + legend)
+6. docker compose exec web alembic upgrade head
+7. docker compose restart web
+8. docker compose exec web python -m pytest tests/ -x -q 2>&1 | tail -20
+9. git add -A && git commit -m "[openclaw] Block-F+G: bulk ops + CSV export + reminders + map status overlay"
+10. git push origin main
+11. echo "BLOCK_FG_COMPLETE $(date -Iseconds)" >> /tmp/openclaw_progress.log

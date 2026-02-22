@@ -1,49 +1,65 @@
-You are continuing an overnight build of the Mike's Building System (mikes-bs) app on aidev01. Full spec is in TASK.md and OSINT_ARCHITECTURE.md. Read them both if you need context.
+You are continuing an overnight build of the Mike's Building System (mikes-bs) app on aidev01. Full spec is in TASK.md and OSINT_ARCHITECTURE.md.
 
-## WHERE WE LEFT OFF
+## STATUS: READY TO RESUME FROM BLOCK A
 
 Completed and committed:
-- FIX block (A-I) ✅
-- PREP-1: Alembic fix ✅
-- PREP-2: app.py decomposed into routers ✅
-- PREP-3: ORM models for raw tables ✅
-- PREP-4: Basic auth (admin/admin) ✅
+- FIX block (A-I) ✅  commit: 4aae303
+- PREP-1: Alembic fix ✅  commit: 9b254e7
+- PREP-2: app.py → routers ✅  commit: 19fc1cb
+- PREP-3: ORM models ✅  commit: 93d778e
+- PREP-4: Basic auth (admin/admin) ✅  commit: ac00c43
 
-Block A (bundle detection) was STARTED but NOT committed. You have uncommitted changes in:
+Block A (bundle detection) was partially written but NOT committed. You have uncommitted WIP:
 - openclaw/analysis/bundles_service.py (new file)
 - openclaw/analysis/edge_config.py (modified)
 - openclaw/analysis/rule_engine.py (modified)
 - openclaw/web/routers/candidates.py (modified)
 
+## INFRASTRUCTURE FIXES APPLIED (since your last run)
+
+1. docker-compose.yml now volume-mounts `./alembic:/app/alembic` (both app and web services) — migrations are live-mounted
+2. Docker image was REBUILT with passlib[bcrypt] — all new deps now installed
+3. Alembic is at head (migrations 009 + 010 applied cleanly)
+4. App is up and returning 303 (login redirect — auth working)
+
+## IMPORTANT DOCKER RULES
+
+- If you add new dependencies to requirements.txt: run `docker compose build && docker compose up -d`
+- For code changes only: `docker compose restart web` is sufficient
+- For new migrations: `docker compose exec web alembic upgrade head` (migrations are now live-mounted, no rebuild needed)
+- For schema changes: create Alembic migration file, then run upgrade
+
 ## YOUR FIRST ACTION
 
-1. Review the uncommitted Block A work with `git diff` and `cat openclaw/analysis/bundles_service.py`
-2. Finish any incomplete parts of Block A (A1 through A8 per TASK.md)
-3. Run tests: `docker compose exec web python -m pytest tests/ -x -q 2>&1 | tail -20`
-4. Commit: `git add -A && git commit -m "[openclaw] Block-A: adjacent same-owner parcel bundle detection"`
-5. Write marker: `echo "BLOCK_A_COMPLETE $(date -Iseconds)" >> /tmp/openclaw_progress.log`
-6. Then continue in order: B → C → D1 audit → D2 → E → F → G → H → observability → tests
+1. `git diff` to review the uncommitted Block A WIP
+2. `cat openclaw/analysis/bundles_service.py` to see what's there
+3. Finish Block A (A1-A8 per TASK.md) — the geometry, matching, storage, scoring, map overlay, API, tests
+4. `docker compose exec web alembic upgrade head` if new migrations needed
+5. `docker compose restart web` after code changes
+6. Run tests, commit, write progress marker
+7. Continue: B → C → D1 audit → D2 → E → F → G → H → observability → tests
 
 ## CRITICAL CONTEXT
 
-- OSINT_BASE_URL = http://localhost:8450/api (NOT 8000)
-- Auth: admin/admin seed
+- OSINT_BASE_URL = http://localhost:8450/api (NOT 8000 — OSINT platform is on 8450)
+- Auth: admin/admin
 - All STOP points: auto-continue if tests pass
-- D1 learning audit: write LEARNING_AUDIT.md, evaluate yourself, proceed to D2 if clean
-- Known pre-existing test failure: test_feasibility.py::test_offline_parcel_load (geopandas dtype issue, not your bug, ignore it)
-- App runs in Docker: `docker compose restart web` after changes, `docker compose exec web alembic upgrade head` for migrations
+- D1 audit: write LEARNING_AUDIT.md, evaluate, proceed to D2 if no critical blockers
+- Known pre-existing test failure: test_feasibility.py::test_offline_parcel_load (geopandas dtype issue, ignore)
+- App URL: http://localhost:8470 (returns 303 → /login, that's correct)
 - DB: `docker compose exec postgis psql -U openclaw`
 
-## CHECKPOINT PROTOCOL (mandatory after every block)
+## CHECKPOINT PROTOCOL
 
-1. Run tests
-2. `git add -A && git commit -m "[openclaw] {BLOCK}: {description}"`
-3. `echo "{BLOCK}_COMPLETE $(date -Iseconds)" >> /tmp/openclaw_progress.log`
-4. If stuck >10 min: commit as [WIP], write BLOCKED.md, echo {BLOCK}_BLOCKED to progress log, move on
+After each block:
+1. Run tests: `docker compose exec web python -m pytest tests/ -x -q 2>&1 | tail -20`
+2. Commit: `git add -A && git commit -m "[openclaw] {BLOCK}: {description}"`
+3. `git push origin main`
+4. `echo "{BLOCK}_COMPLETE $(date -Iseconds)" >> /tmp/openclaw_progress.log`
+
+If stuck >10 min on same error: commit `[WIP]`, write BLOCKED.md, echo `{BLOCK}_BLOCKED` to progress log, move on.
 
 ## COMPLETION
 
-When ALL remaining blocks done and test suite passes, run:
-openclaw system event --text "Mike BS build COMPLETE: Blocks A-H done. Check TEST_RESULTS.md and API_CHANGES.md." --mode now
-
-Start immediately — review Block A WIP and either finish or commit it as-is, then move to Block B.
+When ALL blocks complete and full test suite passes:
+openclaw system event --text "Mike BS build COMPLETE: all blocks done. See TEST_RESULTS.md and API_CHANGES.md." --mode now

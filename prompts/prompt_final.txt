@@ -1,0 +1,23 @@
+You are completing the Mike's Building System overnight build — final observability pass, test suite, and docs.
+Full spec sections: /home/gabriel/mikes-bs/TASK.md sections 12 (Observability), 13 (Testing), steps 16-17.
+
+STEPS:
+1. Observability (section 12): Add structlog or JSON formatter to Python stdlib logging. Add structured log events (see TASK.md §12) for: bundle detection, enrichment, OSINT, lead events, voting, bulk ops, export, auth. Format: {"timestamp":"...","level":"...","module":"...","event":"...","data":{...}}
+
+2. Full test suite: docker compose exec web python -m pytest tests/ -v 2>&1 | tee /home/gabriel/mikes-bs/TEST_RESULTS.md
+
+3. Update /home/gabriel/mikes-bs/.env.example with ALL new env vars from TASK.md section 14:
+   ADMIN_USERNAME, ADMIN_PASSWORD, BUNDLE_ADJACENCY_TOLERANCE_FT, BUNDLE_SEARCH_RADIUS_FT,
+   EDGE_WEIGHT_BUNDLE_SAME_OWNER, EDGE_WEIGHT_BUNDLE_ADJACENT, BUNDLE_SCORE_CAP, BUNDLE_CACHE_TTL_HOURS,
+   BUNDLE_MAX_NEIGHBORS, EDGE_WEIGHT_USER_UPVOTE, VOTE_NET_THRESHOLD, LEARNING_WEIGHT_MAX_DELTA,
+   LEARNING_WEIGHT_DECAY_HALFLIFE_DAYS, SCORE_STALENESS_THRESHOLD_HOURS, SPLIT_WEIGHT, VALUE_WEIGHT,
+   OWNER_WEIGHT, SKIP_TRACE_ENABLED, SKIP_TRACE_API_KEY, SKIP_TRACE_RATE_LIMIT_PER_MIN,
+   SKIP_TRACE_MAX_RETRIES, BUSINESS_FILINGS_ENABLED, ENRICHMENT_RETENTION_DAYS,
+   REMINDER_CHECK_INTERVAL_MIN, REMINDER_EMAIL_ENABLED, OSINT_ENABLED, OSINT_BASE_URL,
+   OSINT_TIMEOUT_SECONDS, OSINT_BATCH_LIMIT, OSINT_BATCH_ENABLED, OSINT_UI_URL, EXPORT_MAX_ROWS
+
+4. Write /home/gabriel/mikes-bs/API_CHANGES.md documenting all new endpoints added (method, path, auth, description, request/response shape)
+
+5. git add -A && git commit -m "[openclaw] Final: structlog observability + test results + .env.example + API_CHANGES.md"
+6. git push origin main
+7. echo "FINAL_COMPLETE $(date -Iseconds)" >> /tmp/openclaw_progress.log

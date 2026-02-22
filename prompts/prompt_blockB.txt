@@ -1,0 +1,24 @@
+You are implementing Block B (External Links under Property Map) for the Mike's Building System app.
+Full spec: /home/gabriel/mikes-bs/TASK.md — read "Feature Block B" section.
+
+Stack: FastAPI + Jinja2 + Vanilla JS. No React. No new infra.
+
+LINKS TO ADD (below map div in property.html):
+- NWMLS: https://www.nwmls.com/ (landing page only)
+- Zillow: https://www.zillow.com/homes/{url_encoded_address}_rb/
+- Redfin: https://www.redfin.com/search?q={url_encoded_address}
+- SnoCo Tax: https://www.snoco.org/proptax/ with display "Search Parcel No: {parcel_id}" (copy hint, not deep-link)
+- "Copy address" button using Clipboard API with document.execCommand fallback
+- All links: target="_blank" rel="noopener noreferrer"
+- Link config in router or config.py, NOT hardcoded in template
+- Mobile: stack vertically, full-width 44px+ touch targets
+
+STEPS:
+1. cat openclaw/web/templates/property.html
+2. cat openclaw/web/routers/candidates.py (find property detail route)
+3. Implement the links row + copy button
+4. docker compose restart web
+5. docker compose exec web python -m pytest tests/ -x -q 2>&1 | tail -20
+6. git add -A && git commit -m "[openclaw] Block-B: external listing and tax links under property map"
+7. git push origin main
+8. echo "BLOCK_B_COMPLETE $(date -Iseconds)" >> /tmp/openclaw_progress.log
