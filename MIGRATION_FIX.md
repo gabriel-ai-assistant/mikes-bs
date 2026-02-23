@@ -20,13 +20,14 @@ Current status:
 | `004_subdivision.py` | `004` | `003` |
 | `005_tax_delinquency_and_sales.py` | `005` | `004` |
 | `006_learning.py` | `006` | `005` |
-| `006_splits_range_arbitrage.py` | `007` | `006` |
+| `007_splits_range_arbitrage.py` | `007` | `006` |
 | `008_feasibility_results.py` | `008` | `007` |
 | `009_fix_block_architecture.py` | `009` | `008` |
 
 Important finding:
 - There is no duplicate revision *ID* in the current code.
 - The previous problem was DB metadata drift: `alembic_version` had both `007` and `008`, which caused overlap errors.
+- Migration filename corrected to match revision: `006_splits_range_arbitrage.py` renamed to `007_splits_range_arbitrage.py`.
 
 ## Backup Before Changes
 Pre-fix `alembic_version` contents:
