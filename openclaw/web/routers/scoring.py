@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
@@ -17,6 +18,32 @@ from openclaw.web.common import db
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# Guards against concurrent rescore runs triggered by rapid rule changes
+_rescore_lock = threading.Lock()
+
+
+def _trigger_rescore_background() -> None:
+    """Schedule a background rescore after a rule change."""
+    def _worker():
+        import time
+        time.sleep(1.5)  # coalesce rapid back-to-back saves
+        if not _rescore_lock.acquire(blocking=False):
+            logger.info("Auto-rescore: already running, skipping duplicate trigger")
+            return
+        try:
+            logger.info("Auto-rescore triggered by rule change")
+            result = rescore_all()
+            logger.info("Auto-rescore complete: %s", result)
+        except Exception:
+            logger.exception("Auto-rescore failed")
+        finally:
+            _rescore_lock.release()
+
+    t = threading.Thread(target=_worker, daemon=True, name="auto-rescore")
+    t.start()
+
+
 VOTE_META_PREFIX = "__vote_meta__:"
 
 
@@ -253,6 +280,7 @@ async def create_rule(request: Request, session: Session = Depends(db)):
         priority=int(data.get("priority") or 100),
     ))
     session.commit()
+    _trigger_rescore_background()
     return {"ok": True}
 
 
@@ -272,6 +300,7 @@ async def update_rule(rule_id: str, request: Request, session: Session = Depends
     rule.priority = int(data.get("priority") or 100)
     rule.active = bool(data.get("active", True))
     session.commit()
+    _trigger_rescore_background()
     return {"ok": True}
 
 
@@ -279,6 +308,7 @@ async def update_rule(rule_id: str, request: Request, session: Session = Depends
 def delete_rule(rule_id: str, session: Session = Depends(db)):
     session.query(ScoringRule).filter(ScoringRule.id == rule_id).delete(synchronize_session=False)
     session.commit()
+    _trigger_rescore_background()
     return {"ok": True}
 
 
@@ -289,6 +319,7 @@ def toggle_rule(rule_id: str, session: Session = Depends(db)):
         return JSONResponse({"error": "not found"}, status_code=404)
     rule.active = not bool(rule.active)
     session.commit()
+    _trigger_rescore_background()
     return {"ok": True}
 
 
