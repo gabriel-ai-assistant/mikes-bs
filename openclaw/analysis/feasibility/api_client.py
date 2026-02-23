@@ -12,7 +12,11 @@ try:
     import numpy as np
 except Exception:  # pragma: no cover - optional dependency fallback
     np = None
-import requests
+try:
+    import requests
+except Exception:  # pragma: no cover - optional dependency fallback
+    requests = None
+import httpx
 from shapely.geometry import shape
 
 
@@ -89,11 +93,17 @@ class FeasibilityAPIClient:
             attempt += 1
             try:
                 self._sleep()
-                resp = requests.get(url, params=params, timeout=self.timeout)
-                if resp.status_code >= 500:
-                    raise requests.HTTPError(f"HTTP {resp.status_code}", response=resp)
-                resp.raise_for_status()
-                return resp.json() if expect_json else resp.content
+                if requests is not None:
+                    resp = requests.get(url, params=params, timeout=self.timeout)
+                    if resp.status_code >= 500:
+                        raise requests.HTTPError(f"HTTP {resp.status_code}", response=resp)
+                    resp.raise_for_status()
+                    return resp.json() if expect_json else resp.content
+
+                with httpx.Client(timeout=float(self.timeout)) as client:
+                    resp = client.get(url, params=params)
+                    resp.raise_for_status()
+                    return resp.json() if expect_json else resp.content
             except Exception:
                 if attempt >= 3:
                     raise

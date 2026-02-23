@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-import requests
+try:
+    import requests
+except Exception:  # pragma: no cover - optional dependency fallback
+    requests = None
+import httpx
 
 from ._geo import parcel_query_geom
 from .api_client import FeasibilityAPIClient
@@ -16,9 +20,16 @@ def _query_sda(wkt: str) -> list[dict]:
         "query": f"SELECT TOP 5 mukey FROM SDA_Get_Mukey_from_intersection_with_WktWgs84('{wkt}')",
     }
     try:
-        r = requests.post(SDA_URL, json=sql, timeout=45)
-        r.raise_for_status()
-        return r.json().get("Table", [])
+        if requests is not None:
+            r = requests.post(SDA_URL, json=sql, timeout=45)
+            r.raise_for_status()
+            return r.json().get("Table", [])
+
+        with httpx.Client(timeout=45.0) as client:
+            r = client.post(SDA_URL, json=sql)
+            r.raise_for_status()
+            payload = r.json()
+            return payload.get("Table", []) if isinstance(payload, dict) else []
     except Exception:
         return []
 
