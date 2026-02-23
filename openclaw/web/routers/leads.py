@@ -358,7 +358,11 @@ def run_lead_osint_endpoint(lead_id: str, request: Request):
 
 
 @router.delete("/api/leads/{lead_id}/enrichment")
-def delete_lead_enrichment(lead_id: str, session: Session = Depends(db)):
+def delete_lead_enrichment(lead_id: str, request: Request, session: Session = Depends(db)):
+    user_id = _parse_user_id(request)
+    if not user_id:
+        return JSONResponse({"error": "unauthenticated"}, status_code=401)
+
     lead = session.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         return JSONResponse({"error": "not found"}, status_code=404)
@@ -370,6 +374,15 @@ def delete_lead_enrichment(lead_id: str, session: Session = Depends(db)):
     lead.osint_summary = None
     session.add(lead)
     session.commit()
+    log_event(
+        logger,
+        "lead.enrichment.deleted",
+        provider="all",
+        lead_id=str(lead.id),
+        triggered_by="user",
+        user_id=user_id,
+        deleted=int(deleted),
+    )
     return {"ok": True, "deleted": int(deleted)}
 
 
