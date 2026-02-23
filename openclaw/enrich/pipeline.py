@@ -8,6 +8,7 @@ import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 
+from sqlalchemy import text
 from sqlalchemy.orm import joinedload
 
 from openclaw.config import settings
@@ -63,20 +64,32 @@ def _enrichment_expiry() -> datetime:
     return datetime.utcnow() + timedelta(days=max(1, int(settings.ENRICHMENT_RETENTION_DAYS)))
 
 
-def _find_owner_dedup_lead(session, lead: Lead) -> Lead | None:
+def _find_owner_dedup_lead(session, lead: Lead) -> dict | None:
     owner_name = _owner_name_for_lead(lead)
     if not owner_name:
         return None
 
-    return (
-        session.query(Lead)
-        .join(Candidate, Candidate.id == Lead.candidate_id)
-        .filter(Candidate.owner_name_canonical == owner_name)
-        .filter(Lead.id != lead.id)
-        .filter(Lead.osint_investigation_id.isnot(None))
-        .order_by(Lead.osint_queried_at.desc(), Lead.updated_at.desc())
-        .first()
-    )
+    row = session.execute(
+        text(
+            """
+            SELECT leads.id AS lead_id, leads.osint_investigation_id, leads.osint_summary
+            FROM leads
+            WHERE leads.id <> :lead_id
+              AND leads.osint_investigation_id IS NOT NULL
+              AND EXISTS (
+                SELECT 1
+                FROM candidates c
+                JOIN parcels p ON c.parcel_id = p.id
+                WHERE c.id = leads.candidate_id
+                  AND LOWER(COALESCE(p.owner_name, '')) = LOWER(:owner_name)
+              )
+            ORDER BY leads.osint_queried_at DESC NULLS LAST, leads.updated_at DESC NULLS LAST
+            LIMIT 1
+            """
+        ),
+        {"lead_id": str(lead.id), "owner_name": owner_name},
+    ).mappings().first()
+    return dict(row) if row else None
 
 
 def _map_osint_status_to_enrichment(status: str | None) -> str:
@@ -105,20 +118,25 @@ def _osint_to_enrichment_payload(result: dict) -> dict:
 async def _run_osint_investigation(session, lead: Lead, provider: OsintProvider) -> dict:
     dedup_lead = _find_owner_dedup_lead(session, lead)
     if dedup_lead:
+        if isinstance(dedup_lead, dict):
+            dedup_investigation_id = dedup_lead.get("osint_investigation_id")
+            dedup_summary = dedup_lead.get("osint_summary")
+            dedup_source_lead_id = dedup_lead.get("lead_id")
+        else:
+            dedup_investigation_id = getattr(dedup_lead, "osint_investigation_id", None)
+            dedup_summary = getattr(dedup_lead, "osint_summary", None)
+            dedup_source_lead_id = getattr(dedup_lead, "lead_id", getattr(dedup_lead, "id", None))
+
         result = {
-            "investigation_id": dedup_lead.osint_investigation_id,
+            "investigation_id": dedup_investigation_id,
             "status": "complete",
-            "summary": dedup_lead.osint_summary or "Reused existing owner investigation",
-            "results": {"dedup_reused": True, "source_lead_id": str(dedup_lead.id)},
+            "summary": dedup_summary or "Reused existing owner investigation",
+            "results": {"dedup_reused": True, "source_lead_id": str(dedup_source_lead_id)},
         }
         logger.info(
-            "osint.dedup_hit",
-            extra={
-                "lead_id": str(lead.id),
-                "owner_name": _owner_name_for_lead(lead),
-                "source_lead_id": str(dedup_lead.id),
-                "investigation_id": dedup_lead.osint_investigation_id,
-            },
+            "OSINT dedup hit: reusing investigation_id=%s for owner=%s",
+            result.get("investigation_id"),
+            _owner_name_for_lead(lead),
         )
     else:
         parcel = lead.candidate.parcel if lead.candidate else None
