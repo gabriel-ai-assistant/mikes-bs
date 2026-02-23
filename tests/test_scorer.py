@@ -10,22 +10,22 @@ SQFT_PER_ACRE = 43560.0
 # ---------------------------------------------------------------------------
 
 def test_score_to_tier_a():
-    """Scores >= 80 → A tier."""
-    assert score_to_tier(80) == "A"
+    """Scores >= 85 → A tier (spec: A>=85)."""
+    assert score_to_tier(85) == "A"
     assert score_to_tier(95) == "A"
     assert score_to_tier(100) == "A"
 
 
 def test_score_to_tier_b():
-    """Scores >= 65 but < 80 → B tier."""
-    assert score_to_tier(65) == "B"
-    assert score_to_tier(79) == "B"
+    """Scores >= 70 but < 85 → B tier (spec: B>=70)."""
+    assert score_to_tier(70) == "B"
+    assert score_to_tier(84) == "B"
 
 
 def test_score_to_tier_c():
-    """Scores >= 50 but < 65 → C tier."""
+    """Scores >= 50 but < 70 → C tier (spec: C>=50 <70)."""
     assert score_to_tier(50) == "C"
-    assert score_to_tier(64) == "C"
+    assert score_to_tier(69) == "C"
 
 
 def test_score_to_tier_d():
