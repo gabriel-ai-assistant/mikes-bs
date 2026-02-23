@@ -138,6 +138,12 @@ function buildPopupHtml(pt) {
       <div class="small"><strong>Tier:</strong> ${escHtml(pt.tier || '—')} · <strong>Score:</strong> ${pt.score ?? '—'}</div>
       <div class="small"><strong>Splits:</strong> ${pt.splits ?? '—'} · <strong>Lot:</strong> ${fmtSf(pt.lot_sf)}</div>
       <div class="small"><strong>Zone:</strong> ${escHtml(pt.zone || '—')} · <strong>Value:</strong> ${fmt(pt.value)}</div>
+      <div class="small mt-1 d-flex align-items-center gap-1">
+        <strong>Parcel #:</strong>
+        <span class="font-monospace" style="font-size:0.72rem;word-break:break-all;user-select:all">${escHtml(pt.parcel_id || '—')}</span>
+        <button class="btn btn-outline-secondary btn-sm py-0 px-1" style="font-size:0.7rem;line-height:1.4;min-width:24px"
+          onclick="navigator.clipboard.writeText('${escHtml(pt.parcel_id || '')}').then(()=>{this.textContent='✓';setTimeout(()=>{this.textContent='⎘'},1400)}).catch(()=>{})">⎘</button>
+      </div>
       <a class="btn btn-sm btn-primary mt-2" href="${BASE}/property/${encodeURIComponent(pt.parcel_id || '')}">View Details</a>
     </div>
   `;
