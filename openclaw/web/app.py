@@ -37,7 +37,7 @@ async def require_auth(request: Request, call_next):
         return await call_next(request)
 
     if not request.cookies.get("user_id"):
-        return RedirectResponse(url="/login", status_code=303)
+        return RedirectResponse(url=f"{ROOT_PATH}/login", status_code=303)
 
     return await call_next(request)
 

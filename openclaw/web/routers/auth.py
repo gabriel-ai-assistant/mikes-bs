@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from openclaw.db.models import User
 from openclaw.logging_utils import log_event
 from openclaw.web.auth_utils import get_user_by_username, verify_password
-from openclaw.web.common import db, templates
+from openclaw.web.common import ROOT_PATH, db, templates
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ async def login(request: Request, session: Session = Depends(db)):
     if "application/json" in content_type:
         response = JSONResponse({"ok": True, "user": {"id": user.id, "username": user.username, "role": user.role}})
     else:
-        response = RedirectResponse(url="/", status_code=303)
+        response = RedirectResponse(url=ROOT_PATH + "/candidates", status_code=303)
     response.set_cookie("user_id", str(user.id), httponly=True, samesite="lax")
     response.set_cookie("username", user.username, httponly=True, samesite="lax")
     response.set_cookie("role", user.role, httponly=True, samesite="lax")
@@ -92,7 +92,7 @@ def logout(request: Request):
 def logout_page(request: Request):
     user_id = request.cookies.get("user_id")
     username = request.cookies.get("username")
-    response = RedirectResponse(url="/login", status_code=303)
+    response = RedirectResponse(url=ROOT_PATH + "/login", status_code=303)
     response.delete_cookie("user_id")
     response.delete_cookie("username")
     response.delete_cookie("role")
