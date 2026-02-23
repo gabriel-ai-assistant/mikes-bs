@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 {% block title %}{{ p.address or p.parcel_id }} — Mike's BS{% endblock %}
+{% block head_extra %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9/dist/leaflet.css">
+{% endblock %}
 {% block content %}
 {% set chip_map = {
   'RISK_WIDTH_CONSTRAINED': 'Width ⚠',
@@ -457,7 +460,6 @@
 {% endblock %}
 
 {% block scripts %}
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9/dist/leaflet.js"></script>
 <style>
 .external-link-btn {
@@ -479,6 +481,7 @@ let pendingPromotePayload = null;
 const propMap = L.map('propmap', {zoomControl: true, attributionControl: false}).setView([{{ lat }}, {{ lng }}], 17);
 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}').addTo(propMap);
 L.marker([{{ lat }}, {{ lng }}]).addTo(propMap);
+setTimeout(() => propMap.invalidateSize(), 100);
 {% endif %}
 
 async function doRate(rating) {
