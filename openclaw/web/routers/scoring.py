@@ -88,8 +88,11 @@ async def submit_feedback(
         payload = {}
 
     feedback_type = payload.get("feedback_type")
+    action = payload.get("action", "").strip().lower()
     if feedback_type in ("thumbs_up", "thumbs_down"):
         rating_value = "up" if feedback_type == "thumbs_up" else "down"
+    elif action in ("up", "down", "clear"):
+        rating_value = action  # Block C format
     elif rating in ("up", "down"):
         rating_value = rating
     else:
@@ -108,6 +111,14 @@ async def submit_feedback(
     actor_votes = [vote for vote in existing_votes if _extract_actor(vote.notes) == actor_key]
 
     # One active vote per actor+candidate. Same vote toggles off; opposite vote replaces.
+    # "clear" action removes all votes without adding a new one.
+    if rating_value == "clear":
+        for vote in actor_votes:
+            session.delete(vote)
+        session.commit()
+        summary = _feedback_summary(session, candidate_id, actor_key)
+        return JSONResponse(summary)
+
     should_toggle_off = any(v.rating == rating_value for v in actor_votes)
     for vote in actor_votes:
         session.delete(vote)

@@ -1,0 +1,79 @@
+PRIORITY FIX: Active commercial/retail parcels are scoring Tier A due to missing use-code suppression.
+Specific failure: 1402 164TH ST SW (Walmart parking lot, present_use="559 Other Retail Trade") scored 89pts Tier A.
+Root cause: engine treats large lot + low improvement ratio as subdivision opportunity regardless of commercial use.
+
+DB rules have been inserted as emergency fix (excludes specific text patterns).
+YOU must implement the SYSTEMATIC fix in code.
+
+Repo: /home/gabriel/mikes-bs
+Full spec context: /home/gabriel/mikes-bs/TASK.md
+
+FIX-1: Add present_use_code numeric field to FIELD_MAP in rule_engine.py
+  - field name: "present_use_code"
+  - lambda: extract leading integer from present_use string, return 0 if not numeric
+  - e.g., "559 Other Retail..." → 559
+  - This enables range-based rules like: present_use_code >= 400 → exclude
+
+FIX-2: Add land_value_psf derived field to FIELD_MAP
+  - field name: "land_value_psf"  
+  - lambda: assessed_value / max(lot_sf, 1)
+  - assessed_value is LAND value in the DB (not total)
+  - Walmart example: 18662100 / 464117 = $40.17/sf → extreme commercial pricing
+
+FIX-3: Insert SYSTEMATIC DB scoring rules (replace the text-match emergency rules):
+  - EXCLUDE: present_use_code >= 400 AND present_use_code <= 699 (retail/wholesale/services range)
+    Use TWO rules: (gte, 400, exclude) AND another approach since rules are OR'd not AND'd
+    Actually: since you can't AND two rules with the current schema, instead insert individual range excludes:
+    - present_use_code gte 500 → exclude (use code 500-599 = retail trade — always exclude)
+    - present_use_code gte 600 AND lt 700 → exclude (600-699 = services/professional — exclude)
+    - present_use_code gte 400 AND lt 500 → exclude (400-499 = other commercial/trade — exclude)
+    NOTE: Rules use OR logic by default. To implement "present_use_code >= 500" you need to handle
+    this in the exclude logic. Check how the engine handles multiple exclude rules.
+    ALTERNATIVE: Add a new "range" operator to the rule engine that checks if field value is in a range.
+    
+  SIMPLEST APPROACH: Add "gte" operator check already exists. Insert:
+    ('Commercial Use 400s - Exclude', 'present_use_code', 'gte', '400', 'exclude')
+    BUT ALSO need to NOT exclude codes < 400 (residential). This requires AND logic.
+    
+  BEST APPROACH: Add a new field "is_commercial_use" that returns True/False:
+    - lambda: 400 <= int(use_code_prefix) <= 799 if numeric
+    - Insert ONE rule: is_commercial_use eq true → exclude
+
+FIX-4: Add RISK_ACTIVE_COMMERCIAL_USE tag in tagger.py
+  - Fires when present_use_code is 400-799 (commercial/services)
+  - Score penalty: -25
+  - Tag name: RISK_ACTIVE_COMMERCIAL_USE
+  - This provides visibility even for borderline cases
+
+FIX-5: Improve underimprovement check
+  In base_score() or compute_base_components() in rule_engine.py:
+  - Current logic: low improvement_value/assessed_value ratio boosts score ("underimproved")
+  - Fix: only apply underimprovement boost for RESIDENTIAL use codes (< 400)
+  - For commercial (>= 400): set improvement component to 0 (neutral), not positive
+
+FIX-6: land_value_psf safety rule
+  - RISK tag: RISK_HIGH_COMMERCIAL_LAND_VALUE fires if land_value_psf > 15.0
+  - Score adj: -20
+  - This catches commercial land priced at commercial rates even if use code slips through
+
+FIX-7: Add re-score trigger after DB rule changes
+  - The app already has POST /api/rescore
+  - After inserting rules via migration or admin, call rescore automatically
+  - Document this in API_CHANGES.md
+
+FIX-8: Update candidate discovery query (openclaw/analysis/rule_engine.py fetch_candidates or similar)
+  - Add WHERE clause to exclude use codes 400-799 at the DB level BEFORE scoring
+  - This is more efficient than scoring then excluding
+  - Check how candidates are fetched and add: AND COALESCE(REGEXP_EXTRACT(present_use, '^(\d+)'), '0')::int NOT BETWEEN 400 AND 799
+
+VALIDATION:
+After implementing, verify:
+1. docker compose exec postgis psql -U openclaw -c "SELECT COUNT(*) FROM candidates c JOIN parcels p ON p.id=c.parcel_id WHERE REGEXP_REPLACE(p.present_use, '[^0-9].*', '')::int BETWEEN 400 AND 799;" → should be 0 or very low
+2. Run tests: docker compose exec web python -m pytest tests/ -q 2>&1 | tail -5
+3. Write new test: test_commercial_use_code_excluded() in tests/test_scorer.py
+4. Commit: git add -A && git commit -m "[openclaw] fix: suppress commercial/retail use codes from subdivision scoring"
+5. git push origin main
+6. echo "COMMERCIAL_FIX_COMPLETE $(date -Iseconds)" >> /tmp/openclaw_progress.log
+7. POST http://localhost:8470/api/rescore to re-score all candidates
+
+IF STUCK: The DB-level fix (FIX-8) is most important. Get that working first, even if the tagger changes are complex.
