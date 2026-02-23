@@ -37,10 +37,10 @@ LEARNING_WEIGHT_DECAY_HALFLIFE_DAYS = float(os.getenv("LEARNING_WEIGHT_DECAY_HAL
 LEARNED_RULE_PREFIX = os.getenv("LEARNED_RULE_PREFIX", "LEARNED:")
 
 # Tier cutoffs (score -> tier)
-# Tier cutoffs — recalibrated post-learning audit (Block D): A>=80, B>=65, C>=50, D>=35, E>=20, F=0
+# Tier cutoffs — audit spec: A>=85, B>=70, C>=50, D>=35, E>=20, F<20
 TIER_CUTOFFS = [
-    (80, "A"),
-    (65, "B"),
+    (85, "A"),
+    (70, "B"),
     (50, "C"),
     (35, "D"),
     (20, "E"),
