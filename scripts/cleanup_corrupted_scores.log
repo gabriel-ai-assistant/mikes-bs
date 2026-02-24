@@ -1,0 +1,5 @@
+total_examined=0
+corrupted_found=0
+rescored=0
+before_tier_counts=none
+after_tier_counts=none
