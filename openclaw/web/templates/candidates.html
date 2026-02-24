@@ -440,17 +440,7 @@ function applyColumnConfig(config) {
   }
 }
 
-function moveColumn(config, key, direction) {
-  const idx = config.order.indexOf(key);
-  if (idx < 0) return;
-  const next = idx + direction;
-  if (next < 0 || next >= config.order.length) return;
-  const tmp = config.order[idx];
-  config.order[idx] = config.order[next];
-  config.order[next] = tmp;
-}
-
-function renderColumnControls(container, config) {
+function renderColumnChooserInto(container, config) {
   if (!container) return;
   container.innerHTML = '';
   const list = document.createElement('div');
@@ -459,6 +449,9 @@ function renderColumnControls(container, config) {
   config.order.forEach((key) => {
     const col = COLUMN_REGISTRY.find((c) => c.key === key);
     if (!col) return;
+    const idx = config.order.indexOf(key);
+    const disableUp = idx <= 0 ? 'disabled' : '';
+    const disableDown = idx >= config.order.length - 1 ? 'disabled' : '';
     const row = document.createElement('div');
     row.className = 'd-flex align-items-center justify-content-between gap-2 border rounded px-2 py-1';
     row.innerHTML = `
@@ -467,8 +460,8 @@ function renderColumnControls(container, config) {
         <span class="small">${escHtml(col.label)}</span>
       </label>
       <div class="btn-group btn-group-sm">
-        <button type="button" class="btn btn-outline-secondary" data-col-up="${key}">↑</button>
-        <button type="button" class="btn btn-outline-secondary" data-col-down="${key}">↓</button>
+        <button type="button" class="btn btn-outline-secondary" onclick="moveColumnUp('${key}')" ${disableUp}>↑</button>
+        <button type="button" class="btn btn-outline-secondary" onclick="moveColumnDown('${key}')" ${disableDown}>↓</button>
       </div>`;
     list.appendChild(row);
   });
@@ -489,29 +482,13 @@ function renderColumnControls(container, config) {
       applyColumnConfig(config);
     });
   });
-  container.querySelectorAll('[data-col-up]').forEach((el) => {
-    el.addEventListener('click', () => {
-      moveColumn(config, el.getAttribute('data-col-up'), -1);
-      saveColumnConfig(config);
-      applyColumnConfig(config);
-      renderColumnPanels(config);
-    });
-  });
-  container.querySelectorAll('[data-col-down]').forEach((el) => {
-    el.addEventListener('click', () => {
-      moveColumn(config, el.getAttribute('data-col-down'), 1);
-      saveColumnConfig(config);
-      applyColumnConfig(config);
-      renderColumnPanels(config);
-    });
-  });
   const resetBtn = container.querySelector('#resetColumnsBtn');
   if (resetBtn) {
     resetBtn.addEventListener('click', () => {
       const defaults = defaultColumnConfig();
       saveColumnConfig(defaults);
       applyColumnConfig(defaults);
-      renderColumnPanels(defaults);
+      renderColumnChooser(defaults);
     });
   }
   const closeBtn = container.querySelector('#closeColumnsBtn');
@@ -523,9 +500,29 @@ function renderColumnControls(container, config) {
   }
 }
 
-function renderColumnPanels(config) {
-  renderColumnControls(document.getElementById('columnChooserPanel'), config);
-  renderColumnControls(document.getElementById('columnChooserModalBody'), config);
+function renderColumnChooser(config) {
+  renderColumnChooserInto(document.getElementById('columnChooserPanel'), config);
+  renderColumnChooserInto(document.getElementById('columnChooserModalBody'), config);
+}
+
+function moveColumnUp(key) {
+  const config = loadColumnConfig();
+  const idx = config.order.indexOf(key);
+  if (idx <= 0) return;
+  [config.order[idx - 1], config.order[idx]] = [config.order[idx], config.order[idx - 1]];
+  saveColumnConfig(config);
+  renderColumnChooser(config);
+  applyColumnConfig(config);
+}
+
+function moveColumnDown(key) {
+  const config = loadColumnConfig();
+  const idx = config.order.indexOf(key);
+  if (idx < 0 || idx >= config.order.length - 1) return;
+  [config.order[idx], config.order[idx + 1]] = [config.order[idx + 1], config.order[idx]];
+  saveColumnConfig(config);
+  renderColumnChooser(config);
+  applyColumnConfig(config);
 }
 
 function getVoteState(candidateId) {
@@ -1007,7 +1004,7 @@ function applyPreset(preset) {
 
 const columnConfig = loadColumnConfig();
 applyColumnConfig(columnConfig);
-renderColumnPanels(columnConfig);
+renderColumnChooser(columnConfig);
 loadUseTypes();
 renderActiveFilterChips();
 updateBulkToolbar();
@@ -1030,12 +1027,17 @@ document.querySelectorAll('tr[data-candidate-id]').forEach((row) => {
 });
 
 document.getElementById('columnGearBtn').addEventListener('click', () => {
+  renderColumnChooser(loadColumnConfig());
   if (window.innerWidth < 768) {
     columnModal.show();
     return;
   }
   const panel = document.getElementById('columnChooserPanel');
   panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+});
+
+document.getElementById('columnChooserModal').addEventListener('show.bs.modal', () => {
+  renderColumnChooser(loadColumnConfig());
 });
 
 document.addEventListener('click', (event) => {
