@@ -1052,6 +1052,67 @@ def get_bundle(candidate_id: str, session: Session = Depends(db)):
     return candidate.bundle_data or {}
 
 
+@router.get("/api/candidate/{candidate_id}/bundle-geo")
+def get_bundle_geo(candidate_id: str, session: Session = Depends(db)):
+    candidate = session.query(Candidate).filter(Candidate.id == candidate_id).first()
+    if not candidate:
+        return JSONResponse({"error": "not found"}, status_code=404)
+
+    bundle_data = candidate.bundle_data if isinstance(candidate.bundle_data, dict) else {}
+    parcel_entries = bundle_data.get("parcels") if isinstance(bundle_data.get("parcels"), list) else []
+    if not parcel_entries:
+        return {"type": "FeatureCollection", "features": []}
+
+    parcel_meta = {}
+    parcel_ids = []
+    default_tier = bundle_data.get("match_tier")
+    for item in parcel_entries:
+        if not isinstance(item, dict):
+            continue
+        parcel_id = (item.get("parcel_id") or "").strip()
+        if not parcel_id:
+            continue
+        parcel_ids.append(parcel_id)
+        parcel_meta[parcel_id] = {
+            "owner_name": item.get("owner_name"),
+            "match_tier": item.get("match_tier") or default_tier,
+        }
+    if not parcel_ids:
+        return {"type": "FeatureCollection", "features": []}
+
+    rows = session.execute(
+        text(
+            """
+            SELECT parcel_id, owner_name, ST_AsGeoJSON(geometry) AS geojson
+            FROM parcels
+            WHERE parcel_id = ANY(:ids)
+            """
+        ),
+        {"ids": parcel_ids},
+    ).mappings().all()
+
+    features = []
+    for row in rows:
+        geojson = row.get("geojson")
+        if not geojson:
+            continue
+        parcel_id = row.get("parcel_id")
+        meta = parcel_meta.get(parcel_id, {})
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": json.loads(geojson),
+                "properties": {
+                    "parcel_id": parcel_id,
+                    "owner_name": meta.get("owner_name") or row.get("owner_name"),
+                    "match_tier": meta.get("match_tier") or default_tier,
+                },
+            }
+        )
+
+    return {"type": "FeatureCollection", "features": features}
+
+
 @router.post("/api/candidate/{candidate_id}/detect-bundle")
 def detect_bundle(candidate_id: str, session: Session = Depends(db)):
     payload = detect_bundle_for_candidate(session, candidate_id)

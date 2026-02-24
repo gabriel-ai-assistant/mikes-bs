@@ -482,6 +482,21 @@ const propMap = L.map('propmap', {zoomControl: true, attributionControl: false})
 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}').addTo(propMap);
 L.marker([{{ lat }}, {{ lng }}]).addTo(propMap);
 setTimeout(() => propMap.invalidateSize(), 100);
+if (typeof CANDIDATE_ID !== 'undefined' && CANDIDATE_ID) {
+  fetch(BASE + '/api/candidate/' + CANDIDATE_ID + '/bundle-geo')
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(geo){
+      if (!geo || !geo.features || !geo.features.length) return;
+      L.geoJSON(geo, {
+        style: {color:'#ff9900',weight:2,fillColor:'#ff9900',fillOpacity:0.15},
+        onEachFeature: function(feature, layer) {
+          var p = feature.properties || {};
+          layer.bindTooltip((p.owner_name||'Unknown')+' | '+(p.match_tier||'')+' match',{sticky:true});
+        }
+      }).addTo(propMap);
+    })
+    .catch(function(){});
+}
 {% endif %}
 
 async function doRate(rating) {
